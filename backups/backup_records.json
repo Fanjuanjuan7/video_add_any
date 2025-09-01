@@ -1,0 +1,44 @@
+[
+  {
+    "id": "backup_1756003651",
+    "timestamp": 1756003651,
+    "date": "2025-08-24 10:47:31",
+    "description": "穿件虚拟环境",
+    "file": "backup_1756003651.zip"
+  },
+  {
+    "id": "backup_1751905826",
+    "timestamp": 1751905826,
+    "date": "2025-07-08 00:30:26",
+    "description": "完美版-01",
+    "file": "backup_1751905826.zip"
+  },
+  {
+    "id": "backup_1751873930",
+    "timestamp": 1751873930,
+    "date": "2025-07-07 15:38:50",
+    "description": "恢复前的自动备份",
+    "file": "backup_1751873930.zip"
+  },
+  {
+    "id": "backup_1751871777",
+    "timestamp": 1751871777,
+    "date": "2025-07-07 15:02:57",
+    "description": "恢复前的自动备份",
+    "file": "backup_1751871777.zip"
+  },
+  {
+    "id": "backup_1751871767",
+    "timestamp": 1751871767,
+    "date": "2025-07-07 15:02:47",
+    "description": "调节字幕参数 暂存",
+    "file": "backup_1751871767.zip"
+  },
+  {
+    "id": "backup_1751772615",
+    "timestamp": 1751772615,
+    "date": "2025-07-06 11:30:15",
+    "description": "第一版",
+    "file": "backup_1751772615.zip"
+  }
+]
