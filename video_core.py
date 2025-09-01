@@ -14,7 +14,7 @@ import random
 from PIL import Image, ImageDraw, ImageFont
 import time
 import logging
-import pandas as pd  # 添加pandas导入
+import pandas as pd
 
 # 导入工具函数
 from utils import get_video_info, run_ffmpeg_command, get_data_path, ensure_dir, load_style_config, find_font_file
@@ -390,6 +390,107 @@ def process_normal_video(video_path, temp_dir, scale_factor=1.1):
     
     print(f"【去水印】处理成功: {resized_path}")
     return resized_path
+
+
+def process_animated_gif_for_video(gif_path, temp_dir, scale_factor=1.0, loop_count=-1, video_duration=None):
+    """
+    为视频处理专门优化的动画GIF处理函数
+    
+    参数:
+        gif_path: 原始GIF文件路径
+        temp_dir: 临时目录路径
+        scale_factor: 缩放因子
+        loop_count: 循环次数 (-1表示无限循环)
+        video_duration: 视频时长（秒），用于确保GIF持续整个视频时长
+        
+    返回:
+        处理后的GIF文件路径，失败返回None
+    """
+    try:
+        if not Path(gif_path).exists():
+            print(f"GIF文件不存在: {gif_path}")
+            return None
+        
+        # 输出路径
+        processed_gif_path = temp_dir / "processed_animated_gif.gif"
+        
+        # 如果提供了视频时长，计算需要的循环次数
+        if video_duration is not None:
+            # 获取原始GIF的持续时间
+            gif_info_cmd = [
+                'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                '-of', 'default=noprint_wrappers=1:nokey=1', str(gif_path)
+            ]
+            
+            try:
+                result = subprocess.run(gif_info_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                gif_duration = float(result.stdout.decode().strip())
+                print(f"原始GIF时长: {gif_duration} 秒")
+                
+                # 计算需要循环的次数
+                if gif_duration > 0:
+                    required_loops = int(video_duration / gif_duration) + 1
+                    print(f"视频时长: {video_duration} 秒，需要循环 {required_loops} 次")
+                else:
+                    required_loops = 10  # 默认循环10次
+                    
+            except Exception as e:
+                print(f"获取GIF信息失败，使用默认循环次数: {e}")
+                required_loops = 10
+        else:
+            required_loops = 10  # 默认循环10次
+            
+        # 构建FFmpeg命令来处理GIF，保持动画特性
+        gif_cmd = [
+            'ffmpeg', '-y',
+            '-stream_loop', str(required_loops),  # 循环播放
+            '-i', str(gif_path)
+        ]
+        
+        # 如果提供了视频时长，限制GIF时长
+        if video_duration is not None:
+            gif_cmd.extend(['-t', str(video_duration)])
+        
+        # 添加缩放过滤器（如果需要）
+        filters = []
+        if scale_factor != 1.0:
+            filters.append(f"scale=iw*{scale_factor}:ih*{scale_factor}")
+        
+        # 添加GIF处理过滤器，保持动画
+        if filters:
+            filter_str = ",".join(filters)
+            gif_cmd.extend([
+                '-vf', f'{filter_str},split[a][b];[a]palettegen=reserve_transparent=on:transparency_color=ffffff[p];[b][p]paletteuse=alpha_threshold=128'
+            ])
+        else:
+            gif_cmd.extend([
+                '-vf', 'split[a][b];[a]palettegen=reserve_transparent=on:transparency_color=ffffff[p];[b][p]paletteuse=alpha_threshold=128'
+            ])
+        
+        # 设置循环参数
+        if loop_count == -1:
+            gif_cmd.extend(['-loop', '0'])  # 无限循环
+        else:
+            gif_cmd.extend(['-loop', str(loop_count)])
+        
+        gif_cmd.extend([
+            '-f', 'gif',
+            str(processed_gif_path)
+        ])
+        
+        print(f"【GIF动画处理】执行命令: {' '.join(gif_cmd)}")
+        
+        result = subprocess.run(gif_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        print(f"【GIF动画处理】处理成功: {processed_gif_path}")
+        return str(processed_gif_path)
+        
+    except subprocess.CalledProcessError as e:
+        print(f"【GIF动画处理】处理失败: {e}")
+        print(f"stderr: {e.stderr.decode()}")
+        return None
+    except Exception as e:
+        print(f"【GIF动画处理】处理异常: {e}")
+        return None
 
 
 @log_with_capture
@@ -771,63 +872,14 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             # 检查文件格式
             file_ext = Path(gif_path).suffix.lower()
             if file_ext in ['.gif', '.webp']:
-                processed_gif_path = temp_dir / "processed_gif.gif"
+                # 使用改进的GIF处理函数，传递视频时长确保GIF持续整个视频时长
+                processed_gif_path = process_animated_gif_for_video(gif_path, temp_dir, gif_scale, gif_loop_count, duration)
                 
-                # 使用FFmpeg处理GIF，调整大小和循环次数
-                gif_filters = []
-                
-                # 缩放过滤器
-                if gif_scale != 1.0:
-                    gif_filters.append(f"scale=iw*{gif_scale}:ih*{gif_scale}")
-                
-                # 构建过滤器字符串
-                filter_str = ",".join(gif_filters) if gif_filters else "copy"
-                
-                # 构建 FFmpeg 命令，保持透明度并设置循环次数
-                gif_cmd = [
-                    'ffmpeg', '-y',
-                    '-i', str(gif_path)
-                ]
-                
-                # 添加过滤器，专门处理带透明背景的GIF
-                if gif_filters:
-                    # 有缩放过滤器时，使用更强的透明背景处理
-                    gif_cmd.extend([
-                        '-vf', f'{filter_str},split[a][b];[a]palettegen=reserve_transparent=on:transparency_color=ffffff[p];[b][p]paletteuse=alpha_threshold=128',
-                        '-f', 'gif'
-                    ])
-                else:
-                    # 无缩放时，直接使用强化的透明背景处理
-                    gif_cmd.extend([
-                        '-vf', 'split[a][b];[a]palettegen=reserve_transparent=on:transparency_color=ffffff[p];[b][p]paletteuse=alpha_threshold=128',
-                        '-f', 'gif'
-                    ])
-                
-                # 添加循环次数控制
-                if gif_loop_count == -1:
-                    # -1 表示无限循环，使用 FFmpeg 默认值
-                    gif_cmd.extend(['-loop', '0'])  # 0 在 FFmpeg 中表示无限循环
-                elif gif_loop_count == 0:
-                    # 0 表示不循环，只播放一次
-                    gif_cmd.extend(['-loop', '-1'])  # -1 在 FFmpeg 中表示不循环
-                else:
-                    # 具体的循环次数
-                    gif_cmd.extend(['-loop', str(gif_loop_count)])
-                
-                print(f"【GIF流程】使用强化透明背景处理: palettegen + paletteuse")
-                logging.info(f"【GIF流程】使用强化透明背景处理: palettegen + paletteuse")
-                
-                gif_cmd.append(str(processed_gif_path))
-                
-                try:
-                    print(f"【GIF流程】执行命令: {' '.join(gif_cmd)}")
-                    result = subprocess.run(gif_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    print(f"【GIF流程】GIF处理成功: {processed_gif_path}")
+                if processed_gif_path:
                     has_gif = True
-                except subprocess.CalledProcessError as e:
-                    print(f"【GIF流程】GIF处理失败: {e}")
-                    print(f"stderr: {e.stderr.decode()}")
-                    has_gif = False
+                    print(f"【GIF流程】GIF处理成功: {processed_gif_path}")
+                else:
+                    print(f"【GIF流程】GIF处理失败")
             else:
                 print(f"【GIF流程】不支持的文件格式: {file_ext}")
         else:
@@ -914,9 +966,9 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                         subtitle_text = "ราคาพิเศษ\nซื้อเลยอย่ารอช้า"  # 泰文示例
                         print("使用默认泰语字幕")
                 else:
-                    print(f"❌ 文档中未找到泰语列: {thai_col}")
+                    print(f"❌ 文档中未找到泰语文列: {thai_col}")
                     subtitle_text = "ราคาพิเศษ\nซื้อเลยอย่ารอช้า"  # 泰文示例
-                    print("使用默认泰语字幕")
+                    print("使用默认泰语文字幕")
             
             # 创建字幕图片
             subtitle_height = 500  # 字幕高度
@@ -1150,13 +1202,13 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                 logging.warning(f"  ⚠️ 图片启用但img_index为None或has_image为False")
             
         if enable_gif and gif_index is not None:
-            # 修复：使用正确的overlay语法，移除不兼容的format参数
-            # 简化为基本的overlay语法，FFmpeg会自动处理透明度
-            overlay_cmd = f"[{current_video}][gif]overlay=x={gif_x}:y={gif_y}[v{next_video_index}];"
+            # 保持GIF动画特性，使用正确的overlay语法
+            # 添加setpts过滤器确保GIF动画与视频同步
+            overlay_cmd = f"[{current_video}][gif]overlay=x={gif_x}:y={gif_y}:shortest=0:repeatlast=0[v{next_video_index}];"
             filter_complex += overlay_cmd
             logging.info(f"  🎞️ 添加GIF叠加: {current_video} + gif -> v{next_video_index}")
             logging.info(f"    位置: x={gif_x}, y={gif_y}")
-            logging.info(f"    修复说明: 使用兼容的overlay语法，移除format参数")
+            logging.info(f"    修复说明: 保持GIF动画特性")
             current_video = f"v{next_video_index}"
             next_video_index += 1
         else:
