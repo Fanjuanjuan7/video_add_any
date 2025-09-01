@@ -14,6 +14,7 @@ import random
 from PIL import Image, ImageDraw, ImageFont
 import time
 import logging
+import pandas as pd  # 添加pandas导入
 
 # 导入工具函数
 from utils import get_video_info, run_ffmpeg_command, get_data_path, ensure_dir, load_style_config, find_font_file
