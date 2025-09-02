@@ -91,7 +91,7 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
                  enable_background=True, enable_image=True, enable_music=False, music_path="",
                  music_mode="single", music_volume=50, document_path=None, enable_gif=False, 
                  gif_path="", gif_loop_count=-1, gif_scale=1.0, gif_x=800, gif_y=100, scale_factor=1.1, 
-                 image_path=None, subtitle_width=800, quality_settings=None):
+                 image_path=None, subtitle_width=800, quality_settings=None, progress_callback=None):
     """
     处理视频的主函数
     
@@ -109,6 +109,7 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
         bg_width: 背景宽度（像素，默认1000）
         bg_height: 背景高度（像素，默认180）
         img_size: 图片大小（像素，默认420）
+        progress_callback: 进度回调函数，用于报告处理进度
         
     返回:
         处理后的视频路径，失败返回None
@@ -194,7 +195,8 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
             scale_factor=scale_factor,
             image_path=image_path,
             subtitle_width=subtitle_width,
-            quality_settings=quality_settings
+            quality_settings=quality_settings,
+            progress_callback=progress_callback  # 添加进度回调函数
         )
         
         if not final_path:
@@ -502,7 +504,7 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                         enable_background=True, enable_image=True, enable_music=False, music_path="",
                         music_mode="single", music_volume=50, document_path=None, enable_gif=False, 
                         gif_path="", gif_loop_count=-1, gif_scale=1.0, gif_x=800, gif_y=100, scale_factor=1.1, 
-                        image_path=None, subtitle_width=800, quality_settings=None):
+                        image_path=None, subtitle_width=800, quality_settings=None, progress_callback=None):
     """
     添加字幕到视频
     
@@ -526,6 +528,7 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
         music_mode: 音乐匹配模式（single/order/random）
         music_volume: 音量百分比（0-100）
         document_path: 用户选择的文档文件路径，如果为None则使用默认的subtitle.csv
+        progress_callback: 进度回调函数，用于报告处理进度
         
     返回:
         处理后的视频路径
@@ -535,6 +538,10 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
     print(f"使用临时目录: {temp_dir}")
     
     try:
+        # 报告进度：开始处理
+        if progress_callback:
+            progress_callback("开始处理视频", 5.0)
+            
         # 1. 获取视频信息
         video_info = get_video_info(video_path)
         if not video_info:
@@ -543,6 +550,10 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             
         width, height, duration = video_info
         print(f"视频信息: {width}x{height}, {duration}秒")
+        
+        # 报告进度：获取视频信息完成
+        if progress_callback:
+            progress_callback("获取视频信息", 10.0)
         
         # 2. 加载字幕配置
         subtitle_df = None
@@ -688,6 +699,10 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             subtitle_lang = random.choice(available_langs)
             print(f"随机选择语言: {subtitle_lang}")
         
+        # 报告进度：样式和语言选择完成
+        if progress_callback:
+            progress_callback("样式和语言选择完成", 20.0)
+            
         # 4. 处理随机位置逻辑
         if random_position:
             # 定义随机区域边界（考虑字幕尺寸）
@@ -751,6 +766,10 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             print(f"📍 使用固定字幕位置: ({subtitle_text_x}, {subtitle_text_y})")
             logging.info(f"📍 使用固定字幕位置: ({subtitle_text_x}, {subtitle_text_y})")
         
+        # 报告进度：位置处理完成
+        if progress_callback:
+            progress_callback("位置处理完成", 25.0)
+            
         # 5. 查找匹配的图片（仅在启用图片时）
         has_image = False
         matched_image_path = None
@@ -862,6 +881,10 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                 print("图片功能已禁用")
             has_image = False
         
+        # 报告进度：图片处理完成
+        if progress_callback:
+            progress_callback("图片处理完成", 30.0)
+            
         # 6. 处理GIF（仅在启用GIF时）
         has_gif = False
         processed_gif_path = None
@@ -889,6 +912,10 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                 print("未指定GIF路径")
             else:
                 print(f"GIF文件不存在: {gif_path}")
+            
+        # 报告进度：GIF处理完成
+        if progress_callback:
+            progress_callback("GIF处理完成", 35.0)
             
         # 8. 处理字幕（仅在启用字幕时）
         subtitle_text = None
@@ -997,6 +1024,10 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
         else:
             print("字幕功能已禁用，跳过字幕生成")
         
+        # 报告进度：字幕处理完成
+        if progress_callback:
+            progress_callback("字幕处理完成", 40.0)
+            
         # 9. 处理背景（仅在启用背景时）
         sample_frame = None
         bg_img = None
@@ -1056,6 +1087,10 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
         else:
             print("背景功能已禁用，跳过背景生成")
         
+        # 报告进度：背景处理完成
+        if progress_callback:
+            progress_callback("背景处理完成", 45.0)
+            
         # 10. 添加字幕和背景到视频（带动画效果）
         
         # 动画参数设置
@@ -1411,6 +1446,10 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             
             ffmpeg_command.append(str(output_with_subtitle))
             
+            # 报告进度：开始执行FFmpeg命令
+            if progress_callback:
+                progress_callback("开始视频处理", 50.0)
+                
             # 执行命令
             logging.info(f"🎥 执行最终FFmpeg命令")
             logging.info(f"  命令长度: {len(ffmpeg_command)} 个参数")
@@ -1418,6 +1457,10 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             logging.info(f"  输出文件: {output_with_subtitle}")
             logging.info(f"  完整命令: {' '.join(ffmpeg_command)}")
             print(f"执行命令: {' '.join(ffmpeg_command)}")
+            # 报告进度：执行FFmpeg命令中
+            if progress_callback:
+                progress_callback("执行视频处理中", 70.0)
+                
             result = run_ffmpeg_command(ffmpeg_command)
                 
             if not result:
@@ -1468,6 +1511,10 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                     print("复制原视频失败")
                     return None
         
+        # 报告进度：视频处理完成
+        if progress_callback:
+            progress_callback("视频处理完成", 90.0)
+            
         # 10. 添加QuickTime兼容性（如果需要）
         final_cmd = [
             'ffmpeg', '-y',
@@ -1478,8 +1525,15 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
         ]
         
         print(f"执行命令: {' '.join(final_cmd)}")
+        # 报告进度：最终转换
+        if progress_callback:
+            progress_callback("最终转换", 95.0)
+            
         if run_ffmpeg_command(final_cmd):
             print(f"成功添加字幕动画，输出到: {output_path}")
+            # 报告进度：处理完成
+            if progress_callback:
+                progress_callback("处理完成", 100.0)
             return output_path
         else:
             print("最终转换失败")

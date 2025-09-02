@@ -47,6 +47,7 @@ class ProcessingThread(QThread):
     """视频处理线程"""
     progress_updated = pyqtSignal(int, str)
     processing_complete = pyqtSignal(bool, dict)  # 修改为dict传递统计信息
+    processing_stage_updated = pyqtSignal(str, float)  # 新增信号，用于更新处理阶段和进度
     
     def __init__(self, video_paths, output_dir, style, subtitle_lang, 
                  quicktime_compatible, img_position_x, img_position_y, 
@@ -109,10 +110,21 @@ class ProcessingThread(QThread):
             
             for i, video_path in enumerate(self.video_paths):
                 video_start_time = time.time()
+                # 初始化每个视频的总进度
+                video_progress = 0
+                # 计算当前视频在总数中的进度范围
+                # 每个视频占总进度的百分比
+                video_progress_range = 100.0 / total_videos
+                # 视频起始进度百分比
+                base_progress = (i / total_videos) * 100
+                
                 self.progress_updated.emit(
-                    int((i / total_videos) * 100), 
+                    int(base_progress), 
                     f"处理视频 {i+1}/{total_videos}: {Path(video_path).name}"
                 )
+                
+                # 发送处理阶段信息
+                self.processing_stage_updated.emit(f"开始处理视频 {i+1}/{total_videos}", 0.0)
                 
                 logging.info(f"🎥 开始处理视频 {i+1}/{total_videos}: {Path(video_path).name}")
                 
@@ -120,6 +132,16 @@ class ProcessingThread(QThread):
                 
                 try:
                     with log_manager.capture_output():
+                        # 定义内部回调函数来更新视频处理进度
+                        def update_progress_callback(stage, progress_percent):
+                            # 计算当前视频的进度占总进度的比例
+                            current_video_progress = base_progress + (progress_percent / 100.0) * video_progress_range
+                            self.progress_updated.emit(int(current_video_progress), 
+                                                      f"处理视频 {i+1}/{total_videos}: {stage} ({progress_percent:.0f}%)")
+                            # 发送处理阶段信息
+                            self.processing_stage_updated.emit(stage, progress_percent)
+                        
+                        # 调用处理函数并传入回调
                         result = process_video(
                             video_path, 
                             str(output_path),  # 确保路径是字符串
@@ -154,7 +176,8 @@ class ProcessingThread(QThread):
                             self.scale_factor,
                             self.image_path,
                             self.subtitle_width,  # 添加字幕宽度参数
-                            quality_settings=self.quality_settings  # 使用关键字参数传递质量设置
+                            quality_settings=self.quality_settings,  # 使用关键字参数传递质量设置
+                            progress_callback=update_progress_callback  # 添加进度回调
                         )
                     
                     video_end_time = time.time()
@@ -164,15 +187,35 @@ class ProcessingThread(QThread):
                         success_count += 1
                         logging.info(f"✅ 视频处理成功: {Path(video_path).name} (耗时: {video_duration:.1f}秒)")
                         print(f"✅ 视频处理成功: {Path(video_path).name} (耗时: {video_duration:.1f}秒)")
+                        
+                        # 更新整体进度，考虑到已完成的视频数量
+                        current_progress = int(((i + 1) / total_videos) * 100)
+                        self.progress_updated.emit(
+                            current_progress,
+                            f"已完成: {i+1}/{total_videos} - {Path(video_path).name} (耗时: {video_duration:.1f}秒)"
+                        )
                     else:
                         failed_videos.append(Path(video_path).name)
                         logging.error(f"❌ 视频处理失败: {Path(video_path).name}")
                         print(f"❌ 视频处理失败: {Path(video_path).name}")
                         
+                        # 即使失败也更新进度
+                        current_progress = int(((i + 1) / total_videos) * 100)
+                        self.progress_updated.emit(
+                            current_progress,
+                            f"视频处理失败: {i+1}/{total_videos} - {Path(video_path).name}"
+                        )
                 except Exception as video_error:
                     failed_videos.append(Path(video_path).name)
                     logging.error(f"❌ 视频处理异常: {Path(video_path).name} - {str(video_error)}")
                     print(f"❌ 视频处理异常: {Path(video_path).name} - {str(video_error)}")
+                    
+                    # 即使异常也更新进度
+                    current_progress = int(((i + 1) / total_videos) * 100)
+                    self.progress_updated.emit(
+                        current_progress,
+                        f"处理异常: {i+1}/{total_videos} - {Path(video_path).name}"
+                    )
             
             # 计算总耗时
             total_time = time.time() - start_time
@@ -1213,6 +1256,7 @@ class VideoProcessorApp(QMainWindow):
         
         self.processing_thread.progress_updated.connect(self.update_progress)
         self.processing_thread.processing_complete.connect(self.processing_finished)
+        self.processing_thread.processing_stage_updated.connect(self.update_processing_stage)
         
         # 禁用界面
         self.disable_ui()
@@ -1229,6 +1273,12 @@ class VideoProcessorApp(QMainWindow):
             self.progress_bar.setValue(value)
         if self.status_bar is not None:
             self.status_bar.showMessage(message)
+    
+    def update_processing_stage(self, stage, progress_percent):
+        """更新处理阶段信息"""
+        # 这里可以添加更详细的处理阶段显示逻辑
+        # 例如，在GUI中显示当前正在处理的阶段
+        logging.info(f"当前处理阶段: {stage} ({progress_percent:.1f}%)")
     
     def processing_finished(self, success, stats):
         """处理完成后的操作"""
