@@ -18,13 +18,13 @@ class BackupManager:
     def __init__(self, app_root=None):
         """初始化备份管理器"""
         if app_root is None:
-            self.app_root = Path(__file__).parent
+            self.app_root = Path(os.path.dirname(os.path.abspath(__file__)))
         else:
             self.app_root = Path(app_root)
         
         # 创建备份目录
         self.backup_dir = self.app_root / "backups"
-        self.backup_dir.mkdir(exist_ok=True)
+        os.makedirs(self.backup_dir, exist_ok=True)
         
         # 备份记录文件
         self.backup_record = self.backup_dir / "backup_records.json"
@@ -79,17 +79,16 @@ class BackupManager:
             with zipfile.ZipFile(backup_file, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 for root, dirs, files in os.walk(self.app_root):
                     # 排除不需要备份的目录
-                    root_path = Path(root)
-                    rel_path = root_path.relative_to(self.app_root)
-                    if any(exclude_dir in str(rel_path).split(os.sep) for exclude_dir in exclude_dirs):
+                    rel_path = os.path.relpath(root, self.app_root)
+                    if any(exclude_dir in rel_path.split(os.sep) for exclude_dir in exclude_dirs):
                         continue
                     
                     # 添加文件到ZIP
                     for file in files:
                         if any(file.endswith(ext) for ext in file_types):
-                            file_path = root_path / file
-                            arc_name = file_path.relative_to(self.app_root)
-                            zipf.write(str(file_path), str(arc_name))
+                            file_path = os.path.join(root, file)
+                            arc_name = os.path.relpath(file_path, self.app_root)
+                            zipf.write(file_path, arc_name)
             
             # 记录备份信息
             backup_info = {
@@ -155,17 +154,16 @@ class BackupManager:
             # 清理要恢复的文件
             for root, dirs, files in os.walk(self.app_root):
                 # 排除不需要清理的目录
-                root_path = Path(root)
-                rel_path = root_path.relative_to(self.app_root)
-                if str(rel_path) == "." or str(rel_path).startswith("backups") or \
-                   str(rel_path).startswith("data/input") or str(rel_path).startswith("data/output"):
+                rel_path = os.path.relpath(root, self.app_root)
+                if rel_path == "." or rel_path.startswith("backups") or \
+                   rel_path.startswith("data/input") or rel_path.startswith("data/output"):
                     continue
                 
                 # 清理Python文件
                 for file in files:
                     if file.endswith('.py'):
-                        file_path = root_path / file
-                        file_path.unlink()
+                        file_path = os.path.join(root, file)
+                        os.remove(file_path)
             
             # 解压备份文件
             with zipfile.ZipFile(backup_file, 'r') as zipf:
