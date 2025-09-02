@@ -17,10 +17,13 @@ import logging
 import pandas as pd
 
 # 导入工具函数
-from utils import get_video_info, run_ffmpeg_command, get_data_path, ensure_dir, load_style_config, find_font_file
+from utils import get_video_info, run_ffmpeg_command, get_data_path, ensure_dir, load_style_config, find_font_file, find_matching_image
 
 # 导入日志管理器
 from log_manager import init_logging, log_with_capture
+
+# 导入辅助函数
+from video_helpers import load_subtitle_config, process_style_and_language, process_random_position, process_image_matching, process_gif
 
 # 初始化日志系统
 log_manager = init_logging()
@@ -81,6 +84,21 @@ def create_rounded_rect_background(width, height, radius, output_path, bg_color=
     except Exception as e:
         print(f"创建圆角矩形背景失败: {e}")
         return None
+import os
+import random
+import subprocess
+import tempfile
+import time
+import uuid
+from datetime import datetime
+from pathlib import Path
+
+import cv2
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+
+from log_manager import log_with_capture
+
 
 
 @log_with_capture
@@ -91,7 +109,8 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
                  enable_background=True, enable_image=True, enable_music=False, music_path="",
                  music_mode="single", music_volume=50, document_path=None, enable_gif=False, 
                  gif_path="", gif_loop_count=-1, gif_scale=1.0, gif_x=800, gif_y=100, scale_factor=1.1, 
-                 image_path=None, subtitle_width=800, quality_settings=None, progress_callback=None):
+                 image_path=None, subtitle_width=800, quality_settings=None, progress_callback=None,
+                 video_index=0):  # 添加视频索引参数
     """
     处理视频的主函数
     
@@ -196,7 +215,8 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
             image_path=image_path,
             subtitle_width=subtitle_width,
             quality_settings=quality_settings,
-            progress_callback=progress_callback  # 添加进度回调函数
+            progress_callback=progress_callback,  # 添加进度回调函数
+            video_index=video_index  # 传递视频索引参数
         )
         
         if not final_path:
@@ -504,7 +524,8 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                         enable_background=True, enable_image=True, enable_music=False, music_path="",
                         music_mode="single", music_volume=50, document_path=None, enable_gif=False, 
                         gif_path="", gif_loop_count=-1, gif_scale=1.0, gif_x=800, gif_y=100, scale_factor=1.1, 
-                        image_path=None, subtitle_width=800, quality_settings=None, progress_callback=None):
+                        image_path=None, subtitle_width=800, quality_settings=None, progress_callback=None,
+                        video_index=0):  # 添加视频索引参数
     """
     添加字幕到视频
     
@@ -1289,9 +1310,21 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             logging.info(f"  📸 图片详细状态: final_image_path={final_image_path}")
             if final_image_path:
                 logging.info(f"  📸 图片大小: {Path(final_image_path).stat().st_size} 字节")
-                logging.info(f"  🎨 背景文件存在: {Path(bg_img).exists()}")
-                logging.info(f"  🎞️ GIF文件存在: {Path(processed_gif_path).exists()}")
-                logging.info(f"  🎵 音乐路径存在: {Path(music_path).exists()}")
+                # 修复：检查bg_img是否为None
+                if bg_img is not None:
+                    logging.info(f"  🎨 背景文件存在: {Path(bg_img).exists()}")
+                else:
+                    logging.info(f"  🎨 背景文件不存在")
+                # 修复：检查processed_gif_path是否为None
+                if processed_gif_path is not None:
+                    logging.info(f"  🎞️ GIF文件存在: {Path(processed_gif_path).exists()}")
+                else:
+                    logging.info(f"  🎞️ GIF文件不存在")
+                # 修复：检查music_path是否为None
+                if music_path is not None:
+                    logging.info(f"  🎵 音乐路径存在: {Path(music_path).exists()}")
+                else:
+                    logging.info(f"  🎵 音乐路径不存在")
                 exists = Path(final_image_path).exists()
                 if Path(final_image_path).exists():
                     logging.info(f"  📸 图片大小: {Path(final_image_path).stat().st_size} 字节")
@@ -1347,11 +1380,10 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                     if music_mode == "random":
                         selected_music_path = str(random.choice(music_files))
                         print(f"【音乐处理】随机选择音乐: {selected_music_path}")
-                    elif music_mode == "order":
-                        # 按文件名排序，选择第一个（可以根据视频索引选择）
-                        music_files.sort(key=lambda x: x.name)
-                        selected_music_path = str(music_files[0])
-                        print(f"【音乐处理】按顺序选择音乐: {selected_music_path}")
+                    elif music_mode == "sequence":
+                        # 顺序模式：根据视频索引选择音乐文件
+                        selected_music_path = str(music_files[video_index % len(music_files)])
+                        print(f"【音乐处理】按顺序选择音乐: {selected_music_path} (索引: {video_index % len(music_files)})")
                     else:  # single模式，选择第一个
                         selected_music_path = str(music_files[0])
                         print(f"【音乐处理】选择第一个音乐: {selected_music_path}")
@@ -1794,102 +1826,6 @@ def batch_process_videos(style=None, subtitle_lang=None, quicktime_compatible=Fa
     
     print(f"\n批量处理完成: {success_count}/{len(video_files)} 个视频成功")
     return success_count
-
-
-def find_matching_image(video_name, image_dir="input/images", custom_image_path=None):
-    """
-    查找与视频名称匹配的图片
-    
-    参数:
-        video_name: 视频文件名（不含扩展名）
-        image_dir: 图片目录
-        custom_image_path: 自定义图片路径（可选）
-        
-    返回:
-        匹配的图片路径，如果没找到则返回None
-    """
-    try:
-        print(f"查找匹配图片: 视频名={video_name}, 图片目录={image_dir}")
-        
-        # 如果提供了自定义图片路径，直接使用
-        if custom_image_path and Path(custom_image_path).exists():
-            print(f"使用自定义图片路径: {custom_image_path}")
-            full_image_dir = custom_image_path
-        else:
-            # 尝试不同的图片目录路径
-            videoapp_dir_path = Path.cwd() / "VideoApp/input/images"
-            current_dir_path = Path.cwd() / "input/images"
-            
-            if videoapp_dir_path.exists():
-                full_image_dir = str(videoapp_dir_path)
-                print(f"使用VideoApp图片目录: {full_image_dir}")
-            elif current_dir_path.exists():
-                full_image_dir = str(current_dir_path)
-                print(f"使用当前目录图片目录: {full_image_dir}")
-            else:
-                full_image_dir = get_data_path("input/images")
-                print(f"使用默认图片目录: {full_image_dir}")
-        
-        print(f"最终图片目录路径: {full_image_dir}")
-            
-        if not Path(full_image_dir).exists():
-            try:
-                Path(full_image_dir).mkdir(parents=True, exist_ok=True)
-                print(f"已创建图片目录: {full_image_dir}")
-            except Exception as e:
-                print(f"创建图片目录失败: {e}")
-                return None
-        
-        # 列出目录中所有文件
-        all_files = [f.name for f in Path(full_image_dir).iterdir() if f.is_file()]
-        print(f"目录中的文件数量: {len(all_files)}")
-        print(f"目录中的所有文件: {all_files}")
-            
-        # 支持的图片扩展名
-        image_extensions = ['.jpg', '.jpeg', '.png', '.webp']
-        
-        # 查找完全匹配的图片
-        for ext in image_extensions:
-            image_path = Path(full_image_dir) / f"{video_name}{ext}"
-            if image_path.exists():
-                print(f"找到完全匹配的图片: {image_path}")
-                return str(image_path)
-        
-        # 如果没有完全匹配，查找包含视频名称的图片
-        matched_images = []
-        for file in all_files:
-            file_path = Path(full_image_dir) / file
-            if file_path.is_file() and any(file.lower().endswith(ext.lower()) for ext in image_extensions):
-                print(f"检查文件: {file}")
-                # 提取视频名称的关键部分（例如M2-romer_003）
-                video_key = video_name.split('_')[0] if '_' in video_name else video_name
-                if video_key.lower() in file.lower():
-                    print(f"  - 匹配成功: {file} (关键词: {video_key})")
-                    matched_images.append((str(file_path), len(file)))
-                else:
-                    print(f"  - 不匹配: {file}")
-        
-        # 按文件名长度排序，选择最短的（通常是最接近的匹配）
-        if matched_images:
-            matched_images.sort(key=lambda x: x[1])
-            best_match = matched_images[0][0]
-            print(f"找到最佳匹配的图片: {best_match}")
-            return best_match
-        
-        # 如果没有匹配，返回目录中的第一张图片（如果有）
-        for file in all_files:
-            file_path = Path(full_image_dir) / file
-            if file_path.is_file() and any(file.lower().endswith(ext.lower()) for ext in image_extensions):
-                print(f"没有匹配，使用目录中的第一张图片: {file_path}")
-                return str(file_path)
-                    
-        print(f"未找到与 {video_name} 匹配的图片，也没有找到任何可用图片")
-        return None
-    except Exception as e:
-        print(f"查找匹配图片时出错: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
 
 
 def process_image_for_overlay(image_path, output_path, size=(420, 420)):

@@ -20,7 +20,7 @@ try:
                                 QLineEdit, QPushButton, QFileDialog, QComboBox, QCheckBox, 
                                 QSpinBox, QDoubleSpinBox, QVBoxLayout, QHBoxLayout, QGridLayout, 
                                 QGroupBox, QMessageBox, QProgressBar, 
-                                QListWidget, QAbstractItemView, QSplitter, QSlider)
+                                QListWidget, QListWidgetItem, QAbstractItemView, QSplitter, QSlider)
     from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSettings
     
 except ImportError as e:
@@ -40,6 +40,7 @@ try:
 except ImportError as e:
     print(f"错误: {e}")
     print("请确保video_core.py和utils.py在当前目录或Python路径中")
+    sys.exit(1)
     sys.exit(1)
 
 
@@ -149,7 +150,7 @@ class ProcessingThread(QThread):
                             self.subtitle_lang, 
                             self.quicktime_compatible,
                             self.img_position_x, 
-                            self.img_position_y,
+                            self.img_position_y,  # 修复参数顺序
                             self.font_size,
                             self.subtitle_x,
                             self.subtitle_y,
@@ -177,7 +178,8 @@ class ProcessingThread(QThread):
                             self.image_path,
                             self.subtitle_width,  # 添加字幕宽度参数
                             quality_settings=self.quality_settings,  # 使用关键字参数传递质量设置
-                            progress_callback=update_progress_callback  # 添加进度回调
+                            progress_callback=update_progress_callback,  # 添加进度回调
+                            video_index=i  # 传递视频索引
                         )
                     
                     video_end_time = time.time()
@@ -263,14 +265,259 @@ class ProcessingThread(QThread):
             self.progress_updated.emit(100, f"处理出错: {str(e)}")
             self.processing_complete.emit(False, error_stats)
 
-
 class VideoProcessorApp(QMainWindow):
     """视频处理应用主窗口"""
     
     def __init__(self):
         super().__init__()
         self.setWindowTitle("视频处理工具")
-        self.setGeometry(100, 100, 1200, 600)  # 增大宽度，减少高度
+        self.setGeometry(100, 100, 1200, 700)  # 增大窗口尺寸以更好地展示功能模块
+        
+        # 设置窗口标题栏样式，无法在 macOS 上完全自定义，但可以调整
+        if sys.platform == 'darwin':
+            # macOS 上的特殊设置
+            self.setUnifiedTitleAndToolBarOnMac(True)  # 设置统一外观
+        
+        # 应用全局样式表以参考苹果系统的界面配色
+        self.setStyleSheet("""
+            QMainWindow, QWidget {
+                background-color: #2c2c2c;
+                color: #ffffff;
+            }
+            QGroupBox {
+                padding-top: 16px;
+                margin-top: 10px;
+                font-weight: bold;
+                border-radius: 8px;
+                border: 1px solid #555555;
+                background-color: #353535;
+                color: #ffffff;
+                font-size: 13px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0px 8px 0px 8px;
+                background-color: #353535;
+                color: #ffffff;
+                border-radius: 4px;
+            }
+            QLabel {
+                color: #ffffff;
+                font-size: 13px;
+            }
+            QListWidget {
+                border: 1px solid #555555;
+                border-radius: 6px;
+                background-color: #2c2c2c;
+                color: #ffffff;
+                padding: 2px;
+            }
+            QListWidget::item {
+                padding: 4px 6px;
+                border-bottom: 1px solid #3a3a3a;
+                color: #ffffff;
+                margin: 1px 0px;
+                border-radius: 4px;
+            }
+            QListWidget::item:hover {
+                background-color: #3a3a3a;
+            }
+            QListWidget::item:selected {
+                background-color: #0070f3;
+                color: #ffffff;
+            }
+            QPushButton {
+                background-color: #0070f3;
+                border: 1px solid #0060d0;
+                border-radius: 4px;
+                padding: 3px 8px;
+                color: #ffffff;
+                min-height: 25px;
+            }
+            QPushButton:hover {
+                background-color: #1884ff;
+            }
+            QPushButton:pressed {
+                background-color: #0060d0;
+            }
+            QPushButton:disabled {
+                background-color: #666666;
+                color: #a0a0a0;
+            }
+            QPushButton#primaryButton {
+                background-color: #0070f3;
+                color: #ffffff;
+                border: 1px solid #0060d0;
+                font-weight: bold;
+                min-height: 32px;
+            }
+            QPushButton#primaryButton:hover {
+                background-color: #1884ff;
+            }
+            QPushButton#primaryButton:pressed {
+                background-color: #0060d0;
+            }
+            QLineEdit, QSpinBox, QDoubleSpinBox {
+                border: 1px solid #555555;
+                border-radius: 5px;
+                padding: 4px 8px;
+                background-color: #2c2c2c;
+                color: #ffffff;
+                selection-background-color: #0070f3;
+                selection-color: #ffffff;
+                font-size: 13px;
+                min-height: 24px;
+            }
+            QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
+                border: 1px solid #0070f3;
+            }
+            QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {
+                background-color: #3a3a3a;
+                color: #a0a0a0;
+            }
+            /* 增强QSpinBox和QDoubleSpinBox的按钮样式 */
+            QSpinBox::up-button, QDoubleSpinBox::up-button {
+                subcontrol-origin: border;
+                subcontrol-position: top right;
+                width: 20px;
+                height: 12px;
+                border-left: 1px solid #555555;
+                border-bottom: 1px solid #555555;
+                border-top-right-radius: 4px;
+                background-color: #3a3a3a;
+            }
+            QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover {
+                background-color: #4a4a4a;
+            }
+            QSpinBox::up-button:pressed, QDoubleSpinBox::up-button:pressed {
+                background-color: #0070f3;
+            }
+            QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+                width: 10px;
+                height: 6px;
+                image: url(:/images/up_arrow.png);  /* 如果有图标文件 */
+            }
+            QSpinBox::down-button, QDoubleSpinBox::down-button {
+                subcontrol-origin: border;
+                subcontrol-position: bottom right;
+                width: 20px;
+                height: 12px;
+                border-left: 1px solid #555555;
+                border-top: 1px solid #555555;
+                border-bottom-right-radius: 4px;
+                background-color: #3a3a3a;
+            }
+            QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+                background-color: #4a4a4a;
+            }
+            QSpinBox::down-button:pressed, QDoubleSpinBox::down-button:pressed {
+                background-color: #0070f3;
+            }
+            QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+                width: 10px;
+                height: 6px;
+                image: url(:/images/down_arrow.png);  /* 如果有图标文件 */
+            }
+            QComboBox {
+                border: 1px solid #555555;
+                border-radius: 5px;
+                padding: 4px 28px 4px 8px;
+                background-color: #2c2c2c;
+                color: #ffffff;
+                min-height: 24px;
+                font-size: 13px;
+            }
+            QComboBox:focus {
+                border: 1px solid #0070f3;
+            }
+            QComboBox::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 24px;
+                border-left: 1px solid #555555;
+            }
+            QComboBox QAbstractItemView {
+                border: 1px solid #555555;
+                background-color: #2c2c2c;
+                color: #ffffff;
+                selection-background-color: #0070f3;
+                selection-color: #ffffff;
+            }
+            QCheckBox {
+                color: #ffffff;
+                spacing: 5px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                background-color: #2c2c2c;
+                border: 1px solid #555555;
+                border-radius: 2px;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #0070f3;
+                border: 1px solid #0060d0;
+            }
+            QCheckBox::indicator:checked:disabled {
+                background-color: #666666;
+            }
+            QSlider::groove:horizontal {
+                border: 1px solid #555555;
+                height: 4px;
+                background: #3a3a3a;
+                border-radius: 2px;
+            }
+            QSlider::handle:horizontal {
+                background: #0070f3;
+                border: 1px solid #0060d0;
+                width: 14px;
+                height: 14px;
+                margin: -5px 0;
+                border-radius: 7px;
+            }
+            QSlider::handle:horizontal:disabled {
+                background: #666666;
+                border: 1px solid #555555;
+            }
+            QTabWidget::pane {
+                border: 1px solid #555555;
+                background-color: #2c2c2c;
+            }
+            QTabBar::tab {
+                background: #353535;
+                border: 1px solid #555555;
+                padding: 6px 12px;
+                color: #ffffff;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+            }
+            QTabBar::tab:selected {
+                background: #454545;
+                border-bottom-color: #454545;
+            }
+            QProgressBar {
+                border: 1px solid #555555;
+                border-radius: 4px;
+                text-align: center;
+                background-color: #2c2c2c;
+                color: #ffffff;
+                height: 20px;
+            }
+            QProgressBar::chunk {
+                background-color: #0070f3;
+                border-radius: 3px;
+            }
+            QStatusBar {
+                background-color: #353535;
+                color: #ffffff;
+            }
+            QToolTip {
+                background-color: #2c2c2c;
+                color: #ffffff;
+                border: 1px solid #555555;
+            }
+        """)
         
         # 初始化日志系统
         print("📄 初始化日志管理系统...")
@@ -296,6 +543,9 @@ class VideoProcessorApp(QMainWindow):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
+        self.main_layout.setSpacing(8)
+        # 增加底部边距以确保进度条完全可见
+        self.main_layout.setContentsMargins(10, 10, 10, 30)
         
         # 创建标签页控件
         self.tabs = QTabWidget()
@@ -315,6 +565,8 @@ class VideoProcessorApp(QMainWindow):
             self.progress_bar = QProgressBar()
             self.progress_bar.setRange(0, 100)
             self.progress_bar.setTextVisible(True)
+            # 增加进度条高度以提高可见性
+            self.progress_bar.setMaximumHeight(25)
             self.status_bar.addPermanentWidget(self.progress_bar)
             self.status_bar.showMessage("准备就绪")
         
@@ -324,25 +576,38 @@ class VideoProcessorApp(QMainWindow):
     def init_process_tab(self):
         """初始化视频处理标签页"""
         main_layout = QVBoxLayout(self.process_tab)
+        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(10, 10, 10, 10)
         
         # 创建左右分栏
         splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setHandleWidth(8)
         
         # 左侧：视频选择和基本设置
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
+        left_layout.setSpacing(12)
+        left_layout.setContentsMargins(5, 5, 5, 5)
         
         # 视频选择组
         video_group = QGroupBox("视频选择")
+        video_group.setMinimumHeight(160)
+        video_group.setMaximumHeight(180)
         video_layout = QVBoxLayout()
+        video_layout.setSpacing(6)
+        video_layout.setContentsMargins(8, 8, 8, 8)
         
         # 添加视频文件按钮
         video_btn_layout = QHBoxLayout()
+        video_btn_layout.setSpacing(8)
         add_video_btn = QPushButton("添加视频文件")
+        add_video_btn.setFixedHeight(26)
         add_video_btn.clicked.connect(self.add_video_files)
         add_folder_btn = QPushButton("添加文件夹")
+        add_folder_btn.setFixedHeight(26)
         add_folder_btn.clicked.connect(self.add_video_folder)
         clear_btn = QPushButton("清空列表")
+        clear_btn.setFixedHeight(26)
         clear_btn.clicked.connect(self.clear_video_list)
         
         video_btn_layout.addWidget(add_video_btn)
@@ -352,42 +617,36 @@ class VideoProcessorApp(QMainWindow):
         # 视频列表
         self.video_list = QListWidget()
         self.video_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.video_list.setMinimumHeight(150)  # 减少高度从200到50
-        self.video_list.setMaximumHeight(200)   # 设置最大高度
+        self.video_list.setMinimumHeight(100)
+        self.video_list.setMaximumHeight(120)
+        # 设置列表行高以显示完整路径
+        self.video_list.setStyleSheet("QListWidget::item { height: 22px; }")
+        
+        video_label = QLabel("已选择的视频文件:")
+        video_label.setMaximumHeight(18)
         
         video_layout.addLayout(video_btn_layout)
-        video_layout.addWidget(QLabel("已选择的视频文件:"))
+        video_layout.addWidget(video_label)
         video_layout.addWidget(self.video_list)
         
         video_group.setLayout(video_layout)
         
-        # 输出设置组
-        output_group = QGroupBox("输出设置")
-        output_layout = QGridLayout()
-        
-        self.output_dir = QLineEdit()
-        self.output_dir.setReadOnly(True)
-        output_browse_btn = QPushButton("选择...")
-        output_browse_btn.clicked.connect(self.browse_output_dir)
-        
-        output_layout.addWidget(QLabel("输出目录:"), 0, 0)
-        output_layout.addWidget(self.output_dir, 0, 1)
-        output_layout.addWidget(output_browse_btn, 0, 2)
-        
-        output_group.setLayout(output_layout)
-        
-        # 添加组件到左侧布局
-        left_layout.addWidget(video_group)
-        
         # 文档选择组
         document_group = QGroupBox("文档选择")
+        document_group.setMinimumHeight(100)
+        document_group.setMaximumHeight(120)
         document_layout = QVBoxLayout()
+        document_layout.setSpacing(6)
+        document_layout.setContentsMargins(8, 8, 8, 8)
         
         # 文档选择按钮和路径显示
         doc_btn_layout = QHBoxLayout()
+        doc_btn_layout.setSpacing(8)
         select_doc_btn = QPushButton("选择文档文件")
+        select_doc_btn.setFixedHeight(26)
         select_doc_btn.clicked.connect(self.select_document_file)
         clear_doc_btn = QPushButton("清除文档")
+        clear_doc_btn.setFixedHeight(26)
         clear_doc_btn.clicked.connect(self.clear_document)
         
         doc_btn_layout.addWidget(select_doc_btn)
@@ -396,25 +655,34 @@ class VideoProcessorApp(QMainWindow):
         # 文档路径显示
         self.document_path = QLineEdit()
         self.document_path.setReadOnly(True)
+        self.document_path.setMaximumHeight(24)
         self.document_path.setPlaceholderText("支持格式: CSV, Excel (.xlsx/.xls), Markdown (.md), Text (.txt)")
         
+        doc_label = QLabel("已选择的文档文件:")
+        doc_label.setMaximumHeight(18)
+        
         document_layout.addLayout(doc_btn_layout)
-        document_layout.addWidget(QLabel("已选择的文档文件:"))
+        document_layout.addWidget(doc_label)
         document_layout.addWidget(self.document_path)
         
         document_group.setLayout(document_layout)
         
-        left_layout.addWidget(document_group)
-        
         # 图片路径选择组
         image_group = QGroupBox("图片路径")
+        image_group.setMinimumHeight(100)
+        image_group.setMaximumHeight(120)
         image_layout = QVBoxLayout()
+        image_layout.setSpacing(6)
+        image_layout.setContentsMargins(8, 8, 8, 8)
         
         # 图片路径选择按钮和路径显示
         img_btn_layout = QHBoxLayout()
+        img_btn_layout.setSpacing(8)
         select_img_btn = QPushButton("选择图片文件夹")
+        select_img_btn.setFixedHeight(26)
         select_img_btn.clicked.connect(self.select_image_folder)
         clear_img_btn = QPushButton("清除路径")
+        clear_img_btn.setFixedHeight(26)
         clear_img_btn.clicked.connect(self.clear_image_path)
         
         img_btn_layout.addWidget(select_img_btn)
@@ -423,32 +691,72 @@ class VideoProcessorApp(QMainWindow):
         # 图片路径显示
         self.image_path = QLineEdit()
         self.image_path.setReadOnly(True)
+        self.image_path.setMaximumHeight(24)
         self.image_path.setPlaceholderText("选择包含图片文件的文件夹，系统将自动匹配视频名称")
         
+        img_label = QLabel("已选择的图片文件夹:")
+        img_label.setMaximumHeight(18)
+        
         image_layout.addLayout(img_btn_layout)
-        image_layout.addWidget(QLabel("已选择的图片文件夹:"))
+        image_layout.addWidget(img_label)
         image_layout.addWidget(self.image_path)
         
         image_group.setLayout(image_layout)
         
+        # 输出设置组
+        output_group = QGroupBox("输出设置")
+        output_group.setMinimumHeight(80)
+        output_group.setMaximumHeight(100)
+        output_layout = QGridLayout()
+        output_layout.setSpacing(6)
+        output_layout.setContentsMargins(8, 8, 8, 8)
+        
+        self.output_dir = QLineEdit()
+        self.output_dir.setReadOnly(True)
+        self.output_dir.setMaximumHeight(24)
+        output_browse_btn = QPushButton("选择...")
+        output_browse_btn.setFixedHeight(26)
+        output_browse_btn.clicked.connect(self.browse_output_dir)
+        output_browse_btn.setMaximumWidth(80)
+        
+        output_layout.addWidget(QLabel("输出目录:"), 0, 0)
+        output_layout.addWidget(self.output_dir, 0, 1)
+        output_layout.addWidget(output_browse_btn, 0, 2)
+        
+        output_group.setLayout(output_layout)
+        
+        # 添加组件到左侧布局，按上到下顺序排列
+        left_layout.addWidget(video_group)
+        left_layout.addWidget(document_group)
         left_layout.addWidget(image_group)
         left_layout.addWidget(output_group)
+        left_layout.addStretch()
         
         # 右侧：样式和高级设置（两列布局）
         right_widget = QWidget()
-        right_main_layout = QHBoxLayout(right_widget)  # 主要水平布局
+        right_main_layout = QHBoxLayout(right_widget)
+        right_main_layout.setSpacing(15)
+        right_main_layout.setContentsMargins(5, 5, 5, 5)
         
         # 左列
         left_column = QWidget()
         left_column_layout = QVBoxLayout(left_column)
+        left_column_layout.setSpacing(12)
+        left_column_layout.setContentsMargins(0, 0, 0, 0)
         
         # 右列
         right_column = QWidget()
         right_column_layout = QVBoxLayout(right_column)
+        right_column_layout.setSpacing(12)
+        right_column_layout.setContentsMargins(0, 0, 0, 0)
         
         # 样式设置组
         style_group = QGroupBox("字幕样式")
+        style_group.setMinimumHeight(180)
+        style_group.setMaximumHeight(200)
         style_layout = QGridLayout()
+        style_layout.setSpacing(6)
+        style_layout.setContentsMargins(8, 8, 8, 8)
         
         self.style_combo = QComboBox()
         self.populate_style_combo(self.style_combo)
@@ -487,7 +795,10 @@ class VideoProcessorApp(QMainWindow):
         
         # 图片设置组
         img_group = QGroupBox("图片设置")
+        img_group.setMinimumHeight(120)  # 设置最小高度以让界面不太挤
         img_layout = QGridLayout()
+        img_layout.setSpacing(6)  # 减少图片设置组间距
+        img_layout.setContentsMargins(8, 8, 8, 8)  # 减少图片设置组边距
         
         self.img_x = QSpinBox()
         self.img_x.setRange(-9999, 9999)
@@ -516,7 +827,10 @@ class VideoProcessorApp(QMainWindow):
         
         # 位置设置组
         subtitle_pos_group = QGroupBox("位置设置")
+        subtitle_pos_group.setMinimumHeight(180)  # 设置最小高度
         subtitle_pos_layout = QGridLayout()
+        subtitle_pos_layout.setSpacing(6)  # 减少位置设置组间距
+        subtitle_pos_layout.setContentsMargins(8, 8, 8, 8)  # 减少位置设置组边距
         
         # 字幕位置随机化勾选框
         self.random_subtitle_position = QCheckBox("字幕位置随机化")
@@ -557,7 +871,10 @@ class VideoProcessorApp(QMainWindow):
         
         # 背景设置组
         bg_group = QGroupBox("背景设置")
+        bg_group.setMinimumHeight(100)  # 设置最小高度
         bg_layout = QGridLayout()
+        bg_layout.setSpacing(6)  # 减少背景设置组间距
+        bg_layout.setContentsMargins(8, 8, 8, 8)  # 减少背景设置组边距
         
         self.bg_width = QSpinBox()
         self.bg_width.setRange(500, 1500)
@@ -580,7 +897,10 @@ class VideoProcessorApp(QMainWindow):
         
         # 素材选择组
         material_group = QGroupBox("素材选择")
+        material_group.setMinimumHeight(100)  # 设置最小高度
         material_layout = QGridLayout()
+        material_layout.setSpacing(6)  # 减少素材选择组间距
+        material_layout.setContentsMargins(8, 8, 8, 8)  # 减少素材选择组边距
         
         # 素材选择勾选框
         self.enable_subtitle = QCheckBox("添加字幕")
@@ -608,7 +928,11 @@ class VideoProcessorApp(QMainWindow):
         
         # 音乐设置组
         music_group = QGroupBox("音乐设置")
+        music_group.setMinimumHeight(180)
+        music_group.setMaximumHeight(200)
         music_layout = QGridLayout()
+        music_layout.setSpacing(6)  # 减少音乐设置组间距
+        music_layout.setContentsMargins(8, 8, 8, 8)  # 减少音乐设置组边距
         
         # 开关控制
         self.enable_music = QCheckBox("启用背景音乐")
@@ -624,6 +948,8 @@ class VideoProcessorApp(QMainWindow):
         music_file_btn.clicked.connect(self.select_music_file)
         music_folder_btn = QPushButton("选择音乐文件夹")
         music_folder_btn.clicked.connect(self.select_music_folder)
+        music_file_btn.setMaximumWidth(100)  # 限制按钮宽度
+        music_folder_btn.setMaximumWidth(120)  # 限制按钮宽度
         
         music_layout.addWidget(QLabel("音乐路径:"), 1, 0)
         music_layout.addWidget(self.music_path, 1, 1)
@@ -649,6 +975,7 @@ class VideoProcessorApp(QMainWindow):
         self.volume_label.setMinimumWidth(40)
         
         volume_layout = QHBoxLayout()
+        volume_layout.setSpacing(5)  # 减少音量布局间距
         volume_layout.addWidget(self.music_volume)
         volume_layout.addWidget(self.volume_label)
         
@@ -657,20 +984,24 @@ class VideoProcessorApp(QMainWindow):
         
         music_group.setLayout(music_layout)
         
-        # 初始状态下禁用音乐相关控件
-        self.music_path.setEnabled(False)
-        music_file_btn.setEnabled(False)
-        music_folder_btn.setEnabled(False)
-        self.music_mode.setEnabled(False)
-        self.music_volume.setEnabled(False)
-        
         # 保存按钮引用以便后续启用/禁用
         self.music_file_btn = music_file_btn
         self.music_folder_btn = music_folder_btn
         
+        # 初始状态下禁用音乐相关控件
+        self.music_path.setEnabled(False)
+        self.music_file_btn.setEnabled(False)
+        self.music_folder_btn.setEnabled(False)
+        self.music_mode.setEnabled(False)
+        self.music_volume.setEnabled(False)
+        
         # GIF设置组
         gif_group = QGroupBox("GIF动画设置")
+        gif_group.setMinimumHeight(200)
+        gif_group.setMaximumHeight(220)
         gif_layout = QGridLayout()
+        gif_layout.setSpacing(6)  # 减少GIF设置组间距
+        gif_layout.setContentsMargins(8, 8, 8, 8)  # 减少GIF设置组边距
         
         # 启用GIF动图复选框
         self.enable_gif = QCheckBox("启用GIF动图")
@@ -684,6 +1015,7 @@ class VideoProcessorApp(QMainWindow):
         self.gif_path.setPlaceholderText("选择GIF文件")
         gif_browse_btn = QPushButton("浏览GIF")
         gif_browse_btn.clicked.connect(self.select_gif_file)
+        gif_browse_btn.setMaximumWidth(80)  # 限制按钮宽度
         
         gif_layout.addWidget(QLabel("GIF路径:"), 1, 0)
         gif_layout.addWidget(self.gif_path, 1, 1)
@@ -729,7 +1061,11 @@ class VideoProcessorApp(QMainWindow):
         
         # 去水印设置组
         watermark_group = QGroupBox("去水印设置")
+        watermark_group.setMinimumHeight(100)
+        watermark_group.setMaximumHeight(120)
         watermark_layout = QGridLayout()
+        watermark_layout.setSpacing(6)  # 减少去水印设置组间距
+        watermark_layout.setContentsMargins(8, 8, 8, 8)  # 减少去水印设置组边距
         
         # 缩放系数设置
         self.scale_factor = QDoubleSpinBox()
@@ -773,14 +1109,32 @@ class VideoProcessorApp(QMainWindow):
         splitter.addWidget(right_widget)
         
         # 设置分栏器初始大小
-        splitter.setSizes([500, 700])  # 调整比例以适应更宽的界面
+        splitter.setSizes([350, 750])  # 调整比例以更好地利用空间
         
         # 添加分栏器到主布局
         main_layout.addWidget(splitter)
         
         # 操作按钮
-        process_btn = QPushButton("处理选中视频")
-        process_btn.setMinimumHeight(40)
+        process_btn = QPushButton("处理所有视频")
+        process_btn.setObjectName("primaryButton")
+        process_btn.setMinimumHeight(32)
+        process_btn.setStyleSheet("""
+            QPushButton#primaryButton {
+                background-color: #0070f3;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 14px;
+                min-height: 36px;
+            }
+            QPushButton#primaryButton:hover {
+                background-color: #0084ff;
+            }
+            QPushButton#primaryButton:pressed {
+                background-color: #0060d0;
+            }
+        """)
         process_btn.clicked.connect(self.process_videos)
         
         main_layout.addWidget(process_btn)
@@ -788,14 +1142,19 @@ class VideoProcessorApp(QMainWindow):
     def init_settings_tab(self):
         """初始化设置标签页"""
         layout = QVBoxLayout(self.settings_tab)
+        layout.setSpacing(5)  # 减少主布局间距
+        layout.setContentsMargins(5, 5, 5, 5)  # 减少边距
         
         # 字体设置组
         font_group = QGroupBox("字体设置")
         font_layout = QGridLayout()
+        font_layout.setSpacing(3)  # 减少字体组间距
+        font_layout.setContentsMargins(5, 5, 5, 5)  # 减少字体组边距
         
         self.font_path_label = QLabel("字体目录: " + str(get_data_path("fonts")))
         font_open_btn = QPushButton("打开字体目录")
         font_open_btn.clicked.connect(self.open_font_dir)
+        font_open_btn.setMaximumWidth(120)  # 限制按钮宽度
         
         font_layout.addWidget(self.font_path_label, 0, 0, 1, 2)
         font_layout.addWidget(font_open_btn, 1, 0)
@@ -805,12 +1164,16 @@ class VideoProcessorApp(QMainWindow):
         # 样式设置组
         style_config_group = QGroupBox("样式配置")
         style_config_layout = QGridLayout()
+        style_config_layout.setSpacing(3)  # 减少样式配置组间距
+        style_config_layout.setContentsMargins(5, 5, 5, 5)  # 减少样式配置组边距
         
         self.style_path_label = QLabel("样式配置文件: " + str(get_data_path("config") / "subtitle_styles.ini"))
         style_open_btn = QPushButton("打开样式配置")
         style_open_btn.clicked.connect(self.open_style_config)
         style_reload_btn = QPushButton("重新加载样式")
         style_reload_btn.clicked.connect(self.reload_styles)
+        style_open_btn.setMaximumWidth(120)  # 限制按钮宽度
+        style_reload_btn.setMaximumWidth(120)  # 限制按钮宽度
         
         style_config_layout.addWidget(self.style_path_label, 0, 0, 1, 2)
         style_config_layout.addWidget(style_open_btn, 1, 0)
@@ -821,6 +1184,8 @@ class VideoProcessorApp(QMainWindow):
         # 默认设置组
         default_group = QGroupBox("默认设置")
         default_layout = QGridLayout()
+        default_layout.setSpacing(3)  # 减少默认设置组间距
+        default_layout.setContentsMargins(5, 5, 5, 5)  # 减少默认设置组边距
         
         self.save_paths_check = QCheckBox("记住上一次的文件路径")
         self.save_paths_check.setChecked(True)
@@ -836,6 +1201,8 @@ class VideoProcessorApp(QMainWindow):
         # 智能配音设置组
         voice_group = QGroupBox("智能配音设置")
         voice_layout = QGridLayout()
+        voice_layout.setSpacing(3)  # 减少智能配音组间距
+        voice_layout.setContentsMargins(5, 5, 5, 5)  # 减少智能配音组边距
         
         # API平台选择
         self.voice_api_combo = QComboBox()
@@ -860,6 +1227,7 @@ class VideoProcessorApp(QMainWindow):
         
         api_test_btn = QPushButton("测试连接")
         api_test_btn.clicked.connect(self.test_api_connection)
+        api_test_btn.setMaximumWidth(100)  # 限制按钮宽度
         
         voice_layout.addWidget(QLabel("API Key:"), 2, 0)
         voice_layout.addWidget(self.api_key_input, 2, 1)
@@ -892,6 +1260,8 @@ class VideoProcessorApp(QMainWindow):
         # 导出质量设置组
         quality_group = QGroupBox("导出质量设置 (TikTok优化)")
         quality_layout = QGridLayout()
+        quality_layout.setSpacing(3)  # 减少导出质量组间距
+        quality_layout.setContentsMargins(5, 5, 5, 5)  # 减少导出质量组边距
         
         # CRF质量设置
         self.crf_value = QSpinBox()
@@ -997,6 +1367,7 @@ class VideoProcessorApp(QMainWindow):
         # 保存按钮
         save_btn = QPushButton("保存设置")
         save_btn.clicked.connect(self.save_settings)
+        save_btn.setMaximumWidth(100)  # 限制按钮宽度
         
         # 添加所有组件到布局
         layout.addWidget(font_group)
@@ -1004,7 +1375,7 @@ class VideoProcessorApp(QMainWindow):
         layout.addWidget(default_group)
         layout.addWidget(quality_group)  # 添加质量设置组
         layout.addWidget(voice_group)
-        layout.addWidget(save_btn)
+        layout.addWidget(save_btn, alignment=Qt.AlignmentFlag.AlignLeft)  # 左对齐保存按钮
         layout.addStretch()
     
     def populate_style_combo(self, combo_box):
@@ -1149,14 +1520,19 @@ class VideoProcessorApp(QMainWindow):
             self.settings.setValue("last_output_dir", dir_path)
     
     def process_videos(self):
-        """处理选中的视频"""
-        # 获取选中的视频文件
-        selected_items = self.video_list.selectedItems()
-        if not selected_items:
-            QMessageBox.warning(self, "警告", "请选择要处理的视频文件")
+        """处理所有添加到列表中的视频"""
+        # 获取列表中的所有视频文件，而不仅是选中的
+        video_count = self.video_list.count()
+        if video_count == 0:
+            QMessageBox.warning(self, "警告", "请先添加视频文件")
             return
         
-        video_paths = [item.text() for item in selected_items]
+        # 获取所有视频的路径，添加检查确保项目存在
+        video_paths = []
+        for i in range(video_count):
+            item = self.video_list.item(i)
+            if item is not None:
+                video_paths.append(item.text())
         
         output_dir = self.output_dir.text()
         if not output_dir:

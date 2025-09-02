@@ -192,6 +192,101 @@ def load_style_config(style=None):
 
 
 # 文件操作
+def find_matching_image(video_name, image_dir="input/images", custom_image_path=None):
+    """
+    查找与视频名称匹配的图片
+    
+    参数:
+        video_name: 视频文件名（不含扩展名）
+        image_dir: 图片目录
+        custom_image_path: 自定义图片路径（可选）
+        
+    返回:
+        匹配的图片路径，如果没找到则返回None
+    """
+    try:
+        print(f"查找匹配图片: 视频名={video_name}, 图片目录={image_dir}")
+        
+        # 如果提供了自定义图片路径，直接使用
+        if custom_image_path and Path(custom_image_path).exists():
+            print(f"使用自定义图片路径: {custom_image_path}")
+            full_image_dir = custom_image_path
+        else:
+            # 尝试不同的图片目录路径
+            videoapp_dir_path = Path.cwd() / "VideoApp/input/images"
+            current_dir_path = Path.cwd() / "input/images"
+            
+            if videoapp_dir_path.exists():
+                full_image_dir = str(videoapp_dir_path)
+                print(f"使用VideoApp图片目录: {full_image_dir}")
+            elif current_dir_path.exists():
+                full_image_dir = str(current_dir_path)
+                print(f"使用当前目录图片目录: {full_image_dir}")
+            else:
+                full_image_dir = get_data_path("input/images")
+                print(f"使用默认图片目录: {full_image_dir}")
+        
+        print(f"最终图片目录路径: {full_image_dir}")
+            
+        if not Path(full_image_dir).exists():
+            try:
+                Path(full_image_dir).mkdir(parents=True, exist_ok=True)
+                print(f"已创建图片目录: {full_image_dir}")
+            except Exception as e:
+                print(f"创建图片目录失败: {e}")
+                return None
+        
+        # 列出目录中所有文件
+        all_files = [f.name for f in Path(full_image_dir).iterdir() if f.is_file()]
+        print(f"目录中的文件数量: {len(all_files)}")
+        print(f"目录中的所有文件: {all_files}")
+            
+        # 支持的图片扩展名
+        image_extensions = ['.jpg', '.jpeg', '.png', '.webp']
+        
+        # 查找完全匹配的图片
+        for ext in image_extensions:
+            image_path = Path(full_image_dir) / f"{video_name}{ext}"
+            if image_path.exists():
+                print(f"找到完全匹配的图片: {image_path}")
+                return str(image_path)
+        
+        # 如果没有完全匹配，查找包含视频名称的图片
+        matched_images = []
+        for file in all_files:
+            file_path = Path(full_image_dir) / file
+            if file_path.is_file() and any(file.lower().endswith(ext.lower()) for ext in image_extensions):
+                print(f"检查文件: {file}")
+                # 提取视频名称的关键部分（例如M2-romer_003）
+                video_key = video_name.split('_')[0] if '_' in video_name else video_name
+                if video_key.lower() in file.lower():
+                    print(f"  - 匹配成功: {file} (关键词: {video_key})")
+                    matched_images.append((str(file_path), len(file)))
+                else:
+                    print(f"  - 不匹配: {file}")
+        
+        # 按文件名长度排序，选择最短的（通常是最接近的匹配）
+        if matched_images:
+            matched_images.sort(key=lambda x: x[1])
+            best_match = matched_images[0][0]
+            print(f"找到最佳匹配的图片: {best_match}")
+            return best_match
+        
+        # 如果没有匹配，返回目录中的第一张图片（如果有）
+        for file in all_files:
+            file_path = Path(full_image_dir) / file
+            if file_path.is_file() and any(file.lower().endswith(ext.lower()) for ext in image_extensions):
+                print(f"没有匹配，使用目录中的第一张图片: {file_path}")
+                return str(file_path)
+                    
+        print(f"未找到与 {video_name} 匹配的图片，也没有找到任何可用图片")
+        return None
+    except Exception as e:
+        print(f"查找匹配图片时出错: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
 def find_matching_file(base_name, directory, extensions=[".jpg", ".png", ".jpeg"]):
     """
     在指定目录中查找与base_name匹配的文件
