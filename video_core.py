@@ -726,59 +726,39 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             
         # 4. 处理随机位置逻辑
         if random_position:
-            # 定义随机区域边界（考虑字幕尺寸）
-            # 用户指定的固定字幕区域：左上角(50,200)到右下角(920,1200)
+            # 定义随机区域边界（基于统一坐标系统1080x1920）
+            # 用户指定的固定字幕区域：左上角(50,200)到右下角(1030,1720)
+            # 注意：1080宽度，左右各留50边距，所以右边界是1030
+            # 1920高度，上下边距分别为200和顶边距，底边距为200
             region_left = 50     # 区域左边界
             region_top = 200     # 区域上边界  
-            region_right = 920   # 区域右边界
-            region_bottom = 1200 # 区域下边界
+            region_right = 1030  # 区域右边界 (1080-50)
+            region_bottom = 1720 # 区域下边界 (1920-200)
             
-            # 字幕实际宽度智能估算（用于边界计算）
-            if subtitle_width > 700:
-                estimated_subtitle_width = 500  # 大字幕使用保守估算
-            elif subtitle_width > 500:
-                estimated_subtitle_width = 400  # 中等字幕
-            else:
-                estimated_subtitle_width = subtitle_width * 0.8  # 小字幕使用80%
-            
-            # 计算字幕位置范围（确保整个字幕完整显示在区域内）
+            # 直接使用GUI中的字幕宽度参数，将字幕左上角作为位置参考点
             # X坐标范围：从区域左边界到（区域右边界 - 字幕宽度）
             min_x = region_left
-            max_x = region_right - estimated_subtitle_width
-            # Y坐标范围：从区域上边界到区域下边界
-            min_y = region_top  
-            max_y = region_bottom
+            max_x = region_right - subtitle_width
+            # Y坐标范围：从区域上边界到（区域下边界 - 一个合理的高度估算，比如200像素）
+            min_y = region_top
+            max_y = region_bottom - 200  # 估算字幕高度为200像素
             
-            # 边界合理性检查
-            if max_x <= min_x:
-                # 如果字幕太宽无法放在指定区域内，使用区域中心策略
-                print(f"⚠️ 字幕宽度({estimated_subtitle_width})超出区域宽度({region_right - region_left})，使用中心位置")
-                center_x = (region_left + region_right) // 2
-                available_range = min(100, (region_right - region_left) // 2)  # 给出一个安全的浮动范围
-                min_x = max(region_left, center_x - available_range // 2)
-                max_x = min(region_right - 10, center_x + available_range // 2)  # 保留10px边距
-                print(f"🎯 使用中心位置策略: X范围[{min_x}, {max_x}]")
-                
-            if max_y <= min_y:
-                # 理论上Y坐标不会有这个问题，但为了安全起见保留检查
-                print(f"⚠️ Y坐标范围异常，使用默认值")
-                min_y = region_top
-                max_y = region_bottom
+            # 确保范围有效
+            min_x = max(min_x, 0)
+            max_x = max(max_x, min_x)  # 确保max_x不小于min_x
+            min_y = max(min_y, 0)
+            max_y = max(max_y, min_y)  # 确保max_y不小于min_y
             
-            # 生成随机位置
-            new_subtitle_text_x = random.randint(int(min_x), int(max_x))
-            new_subtitle_text_y = random.randint(int(min_y), int(max_y))
+            # 生成随机位置（字幕左上角坐标）
+            new_subtitle_text_x = random.randint(min_x, max_x)
+            new_subtitle_text_y = random.randint(min_y, max_y)
             
             print(f"🎲 随机字幕位置: 原始({subtitle_text_x}, {subtitle_text_y}) -> 随机({new_subtitle_text_x}, {new_subtitle_text_y})")
-            print(f"📎 边界检查: X范围[{min_x}, {max_x}], Y范围[{min_y}, {max_y}]")
+            print(f"📎 随机范围: X[{min_x}, {max_x}], Y[{min_y}, {max_y}]")
             print(f"📐 字幕区域: 左上角({region_left}, {region_top}) -> 右下角({region_right}, {region_bottom})")
-            print(f"📏 字幕宽度: 设定={subtitle_width}, 估算={estimated_subtitle_width}")
-            print(f"🖥️ 区域尺寸: {region_right - region_left}x{region_bottom - region_top}, 可用X范围: {max_x - min_x}")
+            print(f"📏 字幕尺寸: 宽={subtitle_width}, 高=200(估算)")
             logging.info(f"🎲 随机字幕位置: 原始({subtitle_text_x}, {subtitle_text_y}) -> 随机({new_subtitle_text_x}, {new_subtitle_text_y})")
-            logging.info(f"📎 边界检查: X范围[{min_x}, {max_x}], Y范围[{min_y}, {max_y}]")
-            logging.info(f"📐 字幕区域: 左上角({region_left}, {region_top}) -> 右下角({region_right}, {region_bottom})")
-            logging.info(f"📏 字幕宽度: 设定={subtitle_width}, 估算={estimated_subtitle_width}")
-            logging.info(f"🖥️ 区域尺寸: {region_right - region_left}x{region_bottom - region_top}, 可用X范围: {max_x - min_x}")
+            logging.info(f"📎 随机范围: X[{min_x}, {max_x}], Y[{min_y}, {max_y}]")
             
             # 更新位置参数
             subtitle_text_x = new_subtitle_text_x
@@ -1026,10 +1006,11 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             print(f"传递给create_subtitle_image的字体大小: {font_size}")
             
             # 使用传入的字体大小参数，而不是硬编码
+            # 修正字幕图片宽度，应该与字幕文本宽度一致，避免位置计算错误
             subtitle_img = create_subtitle_image(
                 text=subtitle_text,
                 style=style,
-                width=width + 200,  # 增加字幕宽度，防止文字被截断
+                width=subtitle_width + 100,  # 使用字幕宽度+边距，而不是视频宽度
                 height=subtitle_height,
                 font_size=font_size,
                 output_path=str(subtitle_img_path),
@@ -1273,10 +1254,37 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             
         # 叠加字幕（如果启用）
         if enable_subtitle and subtitle_index is not None:
-            overlay_cmd = f"[{current_video}][s1]overlay=x={subtitle_absolute_x}:y='if(lt(t,{entrance_duration}),{start_y_position}-({start_y_position}-{final_y_position})*t/{entrance_duration},{final_y_position})':shortest=0:format=auto"
+            # 修正坐标系统：将1080x1920坐标系统映射到实际视频尺寸
+            # 获取处理后视频的实际尺寸（应该是1080x1920）
+            video_info = get_video_info(video_path)  # 这里应该使用处理后的视频路径
+            if video_info:
+                actual_width, actual_height, _ = video_info
+                # 计算坐标缩放比例
+                x_scale = actual_width / 1080.0
+                y_scale = actual_height / 1920.0
+                
+                # 转换坐标到实际视频尺寸
+                scaled_subtitle_x = int(subtitle_absolute_x * x_scale)
+                scaled_subtitle_y = int(final_y_position * y_scale)
+                scaled_start_y = int(start_y_position * y_scale)
+                scaled_final_y = int(final_y_position * y_scale)
+                
+                print(f"🔧 坐标系统转换: 原始({subtitle_absolute_x}, {final_y_position}) -> 实际({scaled_subtitle_x}, {scaled_subtitle_y})")
+                print(f"🔧 缩放比例: X={x_scale:.3f}, Y={y_scale:.3f}")
+                logging.info(f"🔧 坐标系统转换: 原始({subtitle_absolute_x}, {final_y_position}) -> 实际({scaled_subtitle_x}, {scaled_subtitle_y})")
+            else:
+                # 如果无法获取视频信息，使用原始坐标
+                scaled_subtitle_x = subtitle_absolute_x
+                scaled_subtitle_y = final_y_position
+                scaled_start_y = start_y_position
+                scaled_final_y = final_y_position
+                print("⚠️ 无法获取视频信息，使用原始坐标")
+                logging.warning("⚠️ 无法获取视频信息，使用原始坐标")
+            
+            overlay_cmd = f"[{current_video}][s1]overlay=x={scaled_subtitle_x}:y='if(lt(t,{entrance_duration}),{scaled_start_y}-({scaled_start_y}-{scaled_final_y})*t/{entrance_duration},{scaled_final_y})':shortest=0:format=auto"
             filter_complex += overlay_cmd
             logging.info(f"  📝 添加字幕叠加: {current_video} + s1 -> 最终输出")
-            logging.info(f"    位置: x={subtitle_absolute_x}, y={final_y_position}")
+            logging.info(f"    位置: x={scaled_subtitle_x}, y={scaled_final_y}")
             logging.info(f"    随机位置: {random_position}")
         else:
             # 如果没有字幕，移除最后的分号
@@ -1888,52 +1896,41 @@ def process_image_for_overlay(image_path, output_path, size=(420, 420)):
         return None
 
 
-def create_subtitle_image(text, style="style1", width=1080, height=300, font_size=70, output_path=None, subtitle_width=800):
+def create_subtitle_image(text, style=None, width=1080, height=500, font_size=70, 
+                         output_path=None, subtitle_width=800):
     """
     创建字幕图片
     
     参数:
         text: 字幕文本
-        style: 样式名称
-        width: 图片宽度
+        style: 字幕样式
+        width: 图片宽度（视频宽度）
         height: 图片高度
         font_size: 字体大小
         output_path: 输出路径
+        subtitle_width: 字幕最大宽度（用于自动换行）
         
     返回:
         字幕图片路径
     """
     try:
-        print(f"创建字幕图片: 宽={width}, 高={height}, 字体大小={font_size}, 样式={style}")
-        print(f"字幕内容: {text}")
+        print(f"🔧 创建字幕图片: 文本='{text}', 样式={style}, 宽度={width}, 高度={height}, 字体大小={font_size}")
+        print(f"📏 字幕最大宽度: {subtitle_width}")
         
-        # 检查文字类型
-        def contains_chinese(s):
-            # 中文Unicode范围: 4E00-9FFF
-            for char in s:
-                if '\u4E00' <= char <= '\u9FFF':
-                    return True
-            return False
-            
-        def contains_thai(s):
-            # 泰文Unicode范围: 0E00-0E7F
-            for char in s:
-                if '\u0E00' <= char <= '\u0E7F':
-                    return True
-            return False
-            
-        is_chinese_text = contains_chinese(text)
-        is_thai_text = contains_thai(text)
-        print(f"是否包含中文: {is_chinese_text}")
-        print(f"是否包含泰文: {is_thai_text}")
+        # 检查文本是否包含中文或泰文
+        is_chinese_text = any('\u4e00' <= char <= '\u9fff' for char in text)
+        is_thai_text = any('\u0e00' <= char <= '\u0e7f' for char in text)
+        print(f"🔤 文本类型: 中文={is_chinese_text}, 泰文={is_thai_text}")
         
         # 如果没有指定输出路径，生成一个临时文件
         if not output_path:
             import tempfile
             output_path = Path(tempfile.gettempdir()) / f"subtitle_{int(time.time())}.png"
             
-        # 创建透明背景的图片
-        image = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+        # 创建透明背景的图片，宽度为subtitle_width+一些边距，而不是整个视频宽度
+        # 这样可以确保字幕图片的实际宽度与文本宽度匹配
+        image_width = min(width, subtitle_width + 100)  # 添加一些边距
+        image = Image.new('RGBA', (image_width, height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(image)
         
         # 如果是"random"样式，先随机选择一个实际样式
@@ -2173,7 +2170,8 @@ def create_subtitle_image(text, style="style1", width=1080, height=300, font_siz
         for i, line in enumerate(wrapped_lines):
             # 计算文本宽度以居中
             text_width = draw.textlength(line, font=font)
-            x = (width - text_width) // 2
+            # 修改为左对齐，而不是居中对齐
+            x = 50  # 固定左边距
             y = y_start + i * line_height
             
             print(f"行 {i+1}: 宽度={text_width}, X={x}, Y={y}")

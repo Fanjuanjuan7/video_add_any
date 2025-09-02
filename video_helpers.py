@@ -142,54 +142,37 @@ def process_style_and_language(style, subtitle_lang):
 def process_random_position(random_position, subtitle_text_x, subtitle_text_y, subtitle_width):
     """处理随机位置逻辑"""
     if random_position:
-        # 定义随机区域边界（考虑字幕尺寸）
-        # 用户指定的固定字幕区域：左上角(50,200)到右下角(920,1200)
+        # 定义随机区域边界（基于统一坐标系统1080x1920）
+        # 用户指定的固定字幕区域：左上角(50,200)到右下角(1030,1720)
+        # 注意：1080宽度，左右各留50边距，所以右边界是1030
+        # 1920高度，上下边距分别为200和顶边距，底边距为200
         region_left = 50     # 区域左边界
         region_top = 200     # 区域上边界  
-        region_right = 920   # 区域右边界
-        region_bottom = 1200 # 区域下边界
+        region_right = 1030  # 区域右边界 (1080-50)
+        region_bottom = 1720 # 区域下边界 (1920-200)
         
-        # 字幕实际宽度智能估算（用于边界计算）
-        if subtitle_width > 700:
-            estimated_subtitle_width = 500  # 大字幕使用保守估算
-        elif subtitle_width > 500:
-            estimated_subtitle_width = 400  # 中等字幕
-        else:
-            estimated_subtitle_width = subtitle_width * 0.8  # 小字幕使用80%
-        
-        # 计算字幕位置范围（确保整个字幕完整显示在区域内）
+        # 直接使用GUI中的字幕宽度参数，将字幕左上角作为位置参考点
         # X坐标范围：从区域左边界到（区域右边界 - 字幕宽度）
         min_x = region_left
-        max_x = region_right - estimated_subtitle_width
-        # Y坐标范围：从区域上边界到区域下边界
-        min_y = region_top  
-        max_y = region_bottom
+        max_x = region_right - subtitle_width
+        # Y坐标范围：从区域上边界到（区域下边界 - 一个合理的高度估算，比如200像素）
+        min_y = region_top
+        max_y = region_bottom - 200  # 估算字幕高度为200像素
         
-        # 边界合理性检查
-        if max_x <= min_x:
-            # 如果字幕太宽无法放在指定区域内，使用区域中心策略
-            print(f"⚠️ 字幕宽度({estimated_subtitle_width})超出区域宽度({region_right - region_left})，使用中心位置")
-            center_x = (region_left + region_right) // 2
-            available_range = min(100, (region_right - region_left) // 2)  # 给出一个安全的浮动范围
-            min_x = max(region_left, center_x - available_range // 2)
-            max_x = min(region_right - 10, center_x + available_range // 2)  # 保留10px边距
-            print(f"🎯 使用中心位置策略: X范围[{min_x}, {max_x}]")
-            
-        if max_y <= min_y:
-            # 理论上Y坐标不会有这个问题，但为了安全起见保留检查
-            print(f"⚠️ Y坐标范围异常，使用默认值")
-            min_y = region_top
-            max_y = region_bottom
+        # 确保范围有效
+        min_x = max(min_x, 0)
+        max_x = max(max_x, min_x)  # 确保max_x不小于min_x
+        min_y = max(min_y, 0)
+        max_y = max(max_y, min_y)  # 确保max_y不小于min_y
         
-        # 生成随机位置
-        new_subtitle_text_x = random.randint(int(min_x), int(max_x))
-        new_subtitle_text_y = random.randint(int(min_y), int(max_y))
+        # 生成随机位置（字幕左上角坐标）
+        new_subtitle_text_x = random.randint(min_x, max_x)
+        new_subtitle_text_y = random.randint(min_y, max_y)
         
         print(f"🎲 随机字幕位置: 原始({subtitle_text_x}, {subtitle_text_y}) -> 随机({new_subtitle_text_x}, {new_subtitle_text_y})")
-        print(f"📎 边界检查: X范围[{min_x}, {max_x}], Y范围[{min_y}, {max_y}]")
+        print(f"📎 随机范围: X[{min_x}, {max_x}], Y[{min_y}, {max_y}]")
         print(f"📐 字幕区域: 左上角({region_left}, {region_top}) -> 右下角({region_right}, {region_bottom})")
-        print(f"📏 字幕宽度: 设定={subtitle_width}, 估算={estimated_subtitle_width}")
-        print(f"🖥️ 区域尺寸: {region_right - region_left}x{region_bottom - region_top}, 可用X范围: {max_x - min_x}")
+        print(f"📏 字幕尺寸: 宽={subtitle_width}, 高=200(估算)")
         
         # 更新位置参数
         subtitle_text_x = new_subtitle_text_x

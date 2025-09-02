@@ -834,7 +834,7 @@ class VideoProcessorApp(QMainWindow):
         
         # 字幕位置随机化勾选框
         self.random_subtitle_position = QCheckBox("字幕位置随机化")
-        self.random_subtitle_position.setToolTip("勾选后字幕将在指定区域(100,200)到(870,1200)内随机放置")
+        self.random_subtitle_position.setToolTip("勾选后字幕将在指定区域(50,200)到(1030,1720)内随机放置")
         self.random_subtitle_position.stateChanged.connect(self.on_random_position_changed)
         subtitle_pos_layout.addWidget(self.random_subtitle_position, 0, 0, 1, 2)
         
