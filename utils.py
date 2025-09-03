@@ -70,16 +70,29 @@ def get_data_path(sub_dir=""):
 # 配置文件处理
 def load_subtitle_config():
     """
-    加载字幕配置文件(subtitle.csv)
+    加载字幕配置文件(subtitle_utf-8.csv)
     
     返回:
         pandas.DataFrame: 包含name、title、style等列的DataFrame
     """
-    config_path = get_data_path("config") / "subtitle.csv"
+    config_path = get_data_path("config") / "subtitle_utf-8.csv"
     
     if not config_path.exists():
-        # 如果配置文件不存在，创建一个空的
-        df = pd.DataFrame(columns=pd.Index(["name", "title", "title_thai", "style"]))
+        # 如果配置文件不存在，尝试加载subtitle.csv
+        old_config_path = get_data_path("config") / "subtitle.csv"
+        if old_config_path.exists():
+            try:
+                # 尝试读取旧配置文件
+                df = pd.read_csv(old_config_path, encoding="utf-8")
+                # 保存为新文件名
+                df.to_csv(config_path, index=False, encoding="utf-8")
+                print(f"已将旧配置文件转换为新格式: {config_path}")
+                return df
+            except Exception as e:
+                print(f"读取旧配置文件失败: {e}")
+        
+        # 如果旧配置文件也不存在，创建一个空的
+        df = pd.DataFrame(columns=pd.Index(["name", "style", "malay_title", "title_thai", "zn", "malay_prompt", "thai_prompt", "cn_prompt"]))
         df.to_csv(config_path, index=False, encoding="utf-8")
         print(f"创建了新的配置文件: {config_path}")
         return df
@@ -665,5 +678,72 @@ def find_font_file(font_path):
     return None
 
 
-# 字幕生成函数已移至video_core.py，避免重复定义
+# TTS相关函数
+async def generate_tts_audio(text, voice, output_file):
+    """
+    使用Edge-TTS生成音频文件
+    
+    参数:
+        text: 要转换为语音的文本
+        voice: 语音名称（如zh-CN-XiaoxiaoNeural）
+        output_file: 输出音频文件路径
+        
+    返回:
+        bool: 是否成功生成音频
+    """
+    try:
+        import edge_tts
+        
+        # 使用Edge-TTS生成音频
+        communicate = edge_tts.Communicate(text, voice)
+        await communicate.save(output_file)
+        
+        print(f"TTS音频已生成: {output_file}")
+        return True
+    except Exception as e:
+        print(f"生成TTS音频失败: {e}")
+        return False
+
+
+def get_edge_tts_voices():
+    """
+    获取Edge-TTS支持的语音列表
+    
+    返回:
+        list: 语音信息列表
+    """
+    try:
+        import edge_tts
+        import asyncio
+        
+        async def _get_voices():
+            return await edge_tts.list_voices()
+        
+        voices = asyncio.run(_get_voices())
+        return voices
+    except Exception as e:
+        print(f"获取TTS语音列表失败: {e}")
+        return []
+
+
+def get_voices_by_language(voices, language_code):
+    """
+    根据语言代码筛选语音
+    
+    参数:
+        voices: 语音列表
+        language_code: 语言代码（如zh-CN）
+        
+    返回:
+        list: 指定语言的语音列表
+    """
+    try:
+        filtered_voices = [voice for voice in voices if voice["Locale"].startswith(language_code)]
+        return filtered_voices
+    except Exception as e:
+        print(f"筛选语音列表失败: {e}")
+        return []
+
+
+# TTS相关函数
 # 注意：create_subtitle_image函数现在统一在video_core.py中定义

@@ -15,9 +15,10 @@ from PIL import Image, ImageDraw, ImageFont
 import time
 import logging
 import pandas as pd
+import asyncio
 
 # 导入工具函数
-from utils import get_video_info, run_ffmpeg_command, get_data_path, ensure_dir, load_style_config, find_font_file, find_matching_image
+from utils import get_video_info, run_ffmpeg_command, get_data_path, ensure_dir, load_style_config, find_font_file, find_matching_image, generate_tts_audio
 
 # 导入日志管理器
 from log_manager import init_logging, log_with_capture
@@ -110,7 +111,8 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
                  music_mode="single", music_volume=50, document_path=None, enable_gif=False, 
                  gif_path="", gif_loop_count=-1, gif_scale=1.0, gif_x=800, gif_y=100, scale_factor=1.1, 
                  image_path=None, subtitle_width=800, quality_settings=None, progress_callback=None,
-                 video_index=0):  # 移除is_folder_video参数
+                 video_index=0, enable_tts=False, tts_voice="zh-CN-XiaoxiaoNeural", 
+                 tts_volume=100, tts_text=""):  # 添加TTS相关参数
     """
     处理视频的主函数（精处理阶段）
     
@@ -129,6 +131,10 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
         bg_height: 背景高度（像素，默认180）
         img_size: 图片大小（像素，默认420）
         progress_callback: 进度回调函数，用于报告处理进度
+        enable_tts: 是否启用TTS功能
+        tts_voice: TTS语音
+        tts_volume: TTS音量（百分比）
+        tts_text: TTS文本
         
     返回:
         处理后的视频路径，失败返回None
@@ -165,6 +171,17 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
         # 直接使用预处理后的视频，不再进行额外的预处理
         processed_path = video_path
         print(f"使用预处理后的视频: {processed_path}")
+        
+        # 如果启用了TTS，先生成TTS音频
+        tts_audio_path = None
+        if enable_tts and tts_text:
+            print("生成TTS音频...")
+            tts_audio_path = temp_dir / "tts_audio.mp3"
+            if generate_subtitle_tts(tts_text, tts_voice, str(tts_audio_path)):
+                print(f"TTS音频生成成功: {tts_audio_path}")
+            else:
+                print("TTS音频生成失败")
+                tts_audio_path = None
         
         # 3. 添加字幕和其他效果，传递所有参数
         final_path = add_subtitle_to_video(
@@ -211,6 +228,17 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
             print("添加字幕失败")
             return None
             
+        # 如果生成了TTS音频，将其添加到视频中
+        if tts_audio_path and tts_audio_path.exists():
+            print("将TTS音频添加到视频中...")
+            final_with_tts_path = temp_dir / "final_with_tts.mp4"
+            if add_tts_audio_to_video(final_path, str(tts_audio_path), str(final_with_tts_path), tts_volume):
+                # 如果成功添加TTS音频，使用带TTS的版本作为最终输出
+                final_path = str(final_with_tts_path)
+                print(f"TTS音频已添加到视频中: {final_path}")
+            else:
+                print("添加TTS音频到视频失败，使用无TTS版本")
+        
         print(f"视频处理完成: {final_path}")
         return final_path
         
@@ -258,7 +286,6 @@ def process_short_video_reverse_effect(video_path, output_path, temp_dir):
         '-movflags', '+faststart',
         '-brand', 'mp42',  # 设置兼容的品牌标记
         '-tag:v', 'avc1',  # 使用标准AVC标记
-        '-an',  # 不要音频
         str(output_path_file)
     ]
     
@@ -278,7 +305,6 @@ def process_short_video_reverse_effect(video_path, output_path, temp_dir):
         '-preset', 'ultrafast', 
         '-brand', 'mp42',  # 设置兼容的品牌标记
         '-tag:v', 'avc1',  # 使用标准AVC标记
-        '-an',  # 不要音频
         str(forward_path)
     ]
     if not run_ffmpeg_command(cmd_forward):
@@ -299,7 +325,25 @@ def process_short_video_reverse_effect(video_path, output_path, temp_dir):
     ]
     if not run_ffmpeg_command(cmd_reverse):
         return None
-        
+
+    # 3. 创建循环视频
+    concat_file = temp_dir / "concat.txt"
+    concat_file.write_text(f"file '{forward_path}'\nfile '{reverse_path}'\n")
+
+    cmd_concat = [
+        'ffmpeg', '-y', 
+        '-f', 'concat', '-safe', '0',
+        '-i', str(concat_file),
+        '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+        '-profile:v', 'main', '-level', '3.1',
+        '-preset', 'ultrafast',
+        '-brand', 'mp42',  # 设置兼容的品牌标记
+        '-tag:v', 'avc1',  # 使用标准AVC标记
+        # '-an',  # 不要音频 - 移除这行以保留音频轨道
+        str(output_path_file)
+    ]
+    if not run_ffmpeg_command(cmd_concat):
+        return None
     # 3. 拼接视频
     concat_file = temp_dir / "concat.txt"
     with open(concat_file, 'w') as f:
@@ -390,7 +434,6 @@ def process_normal_video(video_path, temp_dir, scale_factor=1.1):
         '-preset', 'ultrafast',
         '-brand', 'mp42',
         '-tag:v', 'avc1',
-        '-an',  # 不要音频
         str(resized_path)
     ]
     
@@ -557,6 +600,97 @@ def process_animated_gif_for_video(gif_path, temp_dir, scale_factor=1.0, loop_co
 
 
 @log_with_capture
+def add_tts_audio_to_video(video_path, audio_path, output_path, audio_volume=100):
+    """
+    将TTS音频添加到视频中
+    
+    参数:
+        video_path: 视频文件路径
+        audio_path: 音频文件路径
+        output_path: 输出文件路径
+        audio_volume: 音频音量（百分比，默认100）
+        
+    返回:
+        bool: 是否成功添加音频
+    """
+    try:
+        # 构建FFmpeg命令，将音频混合到视频中
+        # 使用volume滤镜调整音频音量
+        audio_volume_filter = f"volume={audio_volume/100:.2f}"
+        
+        # 首先检查视频是否有音频流
+        import subprocess
+        probe_cmd = ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_streams', str(video_path)]
+        probe_result = subprocess.run(probe_cmd, capture_output=True, text=True)
+        
+        has_audio = False
+        if probe_result.returncode == 0:
+            import json
+            probe_data = json.loads(probe_result.stdout)
+            for stream in probe_data.get('streams', []):
+                if stream.get('codec_type') == 'audio':
+                    has_audio = True
+                    break
+        
+        if has_audio:
+            # 视频有音频流，混合音频
+            cmd = [
+                'ffmpeg', '-y', '-i', str(video_path), '-i', str(audio_path),
+                '-filter_complex', f'[1:a]{audio_volume_filter}[audio];[0:a][audio]amix=inputs=2:duration=first[aout]',
+                '-map', '0:v', '-map', '[aout]',
+                '-c:v', 'copy',  # 视频流直接复制，不重新编码
+                '-c:a', 'aac',   # 音频编码为AAC
+                '-strict', 'experimental',
+                str(output_path)
+            ]
+        else:
+            # 视频没有音频流，直接添加TTS音频
+            cmd = [
+                'ffmpeg', '-y', '-i', str(video_path), '-i', str(audio_path),
+                '-filter_complex', f'[1:a]{audio_volume_filter}[audio];[audio]apad=pad_dur=1[aout]',
+                '-map', '0:v', '-map', '[aout]',
+                '-c:v', 'copy',  # 视频流直接复制，不重新编码
+                '-c:a', 'aac',   # 音频编码为AAC
+                '-shortest',      # 以最短的流为准
+                '-strict', 'experimental',
+                str(output_path)
+            ]
+        
+        print(f"执行音频混合命令: {' '.join(cmd)}")
+        if run_ffmpeg_command(cmd):
+            print(f"成功将TTS音频添加到视频: {output_path}")
+            return True
+        else:
+            print("添加TTS音频失败")
+            return False
+    except Exception as e:
+        print(f"添加TTS音频时出错: {e}")
+        return False
+
+
+@log_with_capture
+def generate_subtitle_tts(subtitle_text, voice, output_path):
+    """
+    生成字幕的TTS音频
+    
+    参数:
+        subtitle_text: 字幕文本
+        voice: TTS语音
+        output_path: 输出音频文件路径
+        
+    返回:
+        bool: 是否成功生成音频
+    """
+    try:
+        # 使用异步方式生成TTS音频
+        result = asyncio.run(generate_tts_audio(subtitle_text, voice, output_path))
+        return result
+    except Exception as e:
+        print(f"生成字幕TTS音频失败: {e}")
+        return False
+
+
+@log_with_capture
 def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=None, 
                         original_video_path=None, quicktime_compatible=False, 
                         img_position_x=100, img_position_y=0, font_size=70, 
@@ -625,6 +759,8 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             print(f"GIF文件存在: {gif_path}")
         elif enable_gif and gif_path:
             print(f"GIF文件不存在: {gif_path}")
+            
+        # 尝试加载用户指定的文档
         if document_path and Path(document_path).exists():
             print(f"使用用户选择的文档文件: {document_path}")
             try:
@@ -680,6 +816,39 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             except Exception as e:
                 print(f"加载用户文档失败: {e}")
                 subtitle_df = None
+        
+        # 如果没有加载到用户文档，尝试加载默认的字幕配置
+        if subtitle_df is None:
+            try:
+                # 加载默认的字幕配置文件
+                subtitle_df = load_subtitle_config()
+                if subtitle_df is not None and not subtitle_df.empty:
+                    print(f"成功加载默认字幕配置: {len(subtitle_df)} 条记录")
+                    print(f"默认配置列名: {list(subtitle_df.columns)}")
+                else:
+                    print("默认字幕配置为空或不存在")
+                    # 创建一个简单的默认配置（使用新的列名）
+                    default_data = {
+                        'name': ['default'],
+                        'title': ['特价促销\n现在下单立即享受优惠'],
+                        'cn_prompt': ['特价促销\n现在下单立即享受优惠'],  # 修改列名
+                        'malay_prompt': ['Grab cepat\nStok laris seperti roti canai'],  # 修改列名
+                        'thai_prompt': ['ราคาพิเศษ\nซื้อเลยอย่ารอช้า']  # 修改列名
+                    }
+                    subtitle_df = pd.DataFrame(default_data)
+                    print("使用默认字幕数据")
+            except Exception as e:
+                print(f"加载默认字幕配置失败: {e}")
+                # 创建一个简单的默认配置（使用新的列名）
+                default_data = {
+                    'name': ['default'],
+                    'title': ['特价促销\n现在下单立即享受优惠'],
+                    'cn_prompt': ['特价促销\n现在下单立即เข้าร่วม'],  # 修改列名
+                    'malay_prompt': ['Grab cepat\nStok laris seperti roti canai'],  # 修改列名
+                    'thai_prompt': ['ราคาพิเศษ\nซื้อเลยอย่ารอช้า']  # 修改列名
+                }
+                subtitle_df = pd.DataFrame(default_data)
+                print("使用默认字幕データ")
         
         # 获取视频目录
         videos_dir = get_data_path("input/videos")
@@ -971,9 +1140,9 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             print(f"\n=== 语言映射调试信息 ===")
             print(f"GUI选择的语言: {subtitle_lang}")
             print(f"用户期望的映射关系:")
-            print(f"  中文 (chinese) → zn列")
-            print(f"  马来语 (malay) → malay_title列")
-            print(f"  泰语 (thai) → title_thai列")
+            print(f"  中文 (chinese) → zn列（字幕标题）")  # 修改为正确的列名
+            print(f"  马来语 (malay) → malay_title列（字幕标题）")  # 修改为正确的列名
+            print(f"  泰语 (thai) → title_thai列（字幕标题）")  # 修改为正确的列名
             print(f"当前文档可用列: {available_columns}")
             print(f"=========================\n")
             
@@ -983,7 +1152,7 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             print(f"可用的文档列: {available_columns}")
             
             if subtitle_lang == "chinese":
-                # 中文：明确指定使用zn列
+                # 中文：明确指定使用zn列（字幕标题文本）
                 chinese_col = 'zn'
                 
                 if chinese_col in available_columns:
@@ -1001,7 +1170,7 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                     print("使用默认中文字幕")
                     
             elif subtitle_lang == "malay":
-                # 马来语：明确指定使用malay_title列
+                # 马来语：明确指定使用malay_title列（字幕标题文本）
                 malay_col = 'malay_title'
                 
                 if malay_col in available_columns:
@@ -1019,7 +1188,7 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                     print("使用默认马来语字幕")
                     
             else:  # thai
-                # 泰语：明确指定使用title_thai列
+                # 泰语：明确指定使用title_thai列（字幕标题文本）
                 thai_col = 'title_thai'
                 
                 if thai_col in available_columns:
@@ -1029,63 +1198,63 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                         # 替换下划线为空格（如果泰文使用下划线占位）
                         if "_" in subtitle_text:
                             subtitle_text = subtitle_text.replace("_", " ")
-                        print(f"✅ 泰语映射成功：从 '{thai_col}' 列随机选择字幕: {subtitle_text}")
+                        print(f"✅ 泰สั่งซื้อเลยอย่ารอช้า")
                     else:
                         print(f"❌ '{thai_col}' 列中没有有效数据")
                         subtitle_text = "ราคาพิเศษ\nซื้อเลยอย่ารอช้า"  # 泰文示例
-                        print("使用默认泰语字幕")
+                        print("ใช้ข้อความเริ่มต้นภาษาไทย")
                 else:
-                    print(f"❌ 文档中未找到泰语文列: {thai_col}")
+                    print(f"❌ 文档中ไม่มีคอลัมน์ภาษาไทย: {thai_col}")
                     subtitle_text = "ราคาพิเศษ\nซื้อเลยอย่ารอช้า"  # 泰文示例
-                    print("使用默认泰语文字幕")
+                    print("ใช้ข้อความเริ่มต้นภาษาไทย")
             
             # 创建字幕图片
             subtitle_height = 500  # 字幕高度
             subtitle_img_path = temp_dir / "subtitle.png"
             
             # 调试信息：打印字体大小
-            print(f"传递给create_subtitle_image的字体大小: {font_size}")
+            print(f"ขนาดตัวอักษรที่ส่งไปยัง create_subtitle_image: {font_size}")
             
-            # 使用传入的字体大小参数，而不是硬编码
-            # 修正字幕图片宽度，应该与字幕文本宽度一致，避免位置计算错误
+            # ใช้พารามิเตอร์ขนาดตัวอักษรที่ส่งมาแทนการกำหนดขนาดตัวอักษรโดยตรง
+            # ปรับความกว้างของภาพตัวอักษรให้ตรงกับความกว้างของข้อความตัวอักษร ไม่ใช่ความกว้างของวิดีโอ เพื่อป้องกันการคำนวณตำแหน่งผิดพลาด
             subtitle_img = create_subtitle_image(
                 text=subtitle_text,
                 style=style,
-                width=subtitle_width + 100,  # 使用字幕宽度+边距，而不是视频宽度
+                width=subtitle_width + 100,  # ใช้ความกว้างของข้อความตัวอักษร+ขอบ แทนความกว้างของวิดีโอ
                 height=subtitle_height,
                 font_size=font_size,
                 output_path=str(subtitle_img_path),
-                subtitle_width=subtitle_width  # 传递字幕宽度参数
+                subtitle_width=subtitle_width  # ส่งพารามิเตอร์ความกว้างของข้อความตัวอักษร
             )
             
-            # 检查字幕生成结果
+            # ตรวจสอบผลการสร้างภาพตัวอักษร
             if subtitle_img:
-                print(f"字幕图片生成成功，路径: {subtitle_img}")
+                print(f"สร้างภาพตัวอักษรสำเร็จ ตำแหน่ง: {subtitle_img}")
             else:
-                print("警告：字幕图片生成失败")
+                print("คำเตือน: ไม่สามารถสร้างภาพตัวอักษรได้")
                 return None
         else:
-            print("字幕功能已禁用，跳过字幕生成")
+            print("ปิดใช้งานฟังก์ชันตัวอักษร ข้ามการสร้างภาพตัวอักษร")
         
-        # 报告进度：字幕处理完成
+        # รายงานความคืบหน้า: ประมวลผลตัวอักษรเสร็จสิ้น
         if progress_callback:
-            progress_callback("字幕处理完成", 40.0)
+            progress_callback("ประมวลผลตัวอักษรเสร็จสิ้น", 40.0)
             
-        # 9. 处理背景（仅在启用背景时）
+        # 9. 处理พื้นหลัง (หากเปิดใช้งานพื้นหลัง)
         sample_frame = None
         bg_img = None
         
         if enable_background:
-            # 提取视频帧用于取色
+            # ดึงเฟรมวิดีโอเพื่อใช้ในการเลือกสี
             sample_frame_path = temp_dir / "sample_frame.jpg"
             
-            # 从视频中间位置提取帧，确保在视频长度范围内
-            middle_time = min(duration / 2, 5.0)  # 取视频中间位置或最多5秒处
+            # ดึงเฟรมจากจุดกลางของวิดีโอ หรือจุดที่ไม่เกิน 5 วินาที
+            middle_time = min(duration / 2, 5.0)  # จุดกลางของวิดีโอ หรือไม่เกิน 5 วินาที
             
             sample_frame_cmd = [
                 'ffmpeg', '-y',
                 '-i', str(video_path),
-                '-ss', str(middle_time),  # 使用秒数格式，而不是时:分:秒格式
+                '-ss', str(middle_time),  # ใช้รูปแบบวินาที แทนรูปแบบชั่วโมง:นาที:วินาที
                 '-vframes', '1',
                 '-q:v', '1',
                 str(sample_frame_path)
@@ -1409,37 +1578,55 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
         
         # 处理音乐逻辑
         selected_music_path = None
-        if enable_music and music_path:
-            print(f"【音乐处理】启用背景音乐: {music_path}, 模式: {music_mode}, 音量: {music_volume}%")
-            
-            # 根据不同模式选择音乐文件
-            if Path(music_path).is_file():
-                # 单个音乐文件
-                selected_music_path = music_path
-                print(f"【音乐处理】使用单个音乐文件: {selected_music_path}")
-            elif Path(music_path).is_dir():
-                # 音乐文件夹
-                music_extensions = ['.mp3', '.wav', '.m4a', '.aac', '.flac']
-                music_files = []
-                for ext in music_extensions:
-                    music_files.extend(list(Path(music_path).glob(f"*{ext}")))
-                    music_files.extend(list(Path(music_path).glob(f"*{ext.upper()}")))
-                
-                if music_files:
-                    if music_mode == "random":
-                        selected_music_path = str(random.choice(music_files))
-                        print(f"【音乐处理】随机选择音乐: {selected_music_path}")
-                    elif music_mode == "sequence":
-                        # 顺序模式：根据视频索引选择音乐文件
-                        selected_music_path = str(music_files[video_index % len(music_files)])
-                        print(f"【音乐处理】按顺序选择音乐: {selected_music_path} (索引: {video_index % len(music_files)})")
-                    else:  # single模式，选择第一个
+        if enable_music:
+            # 如果启用了音乐但没有指定音乐路径，则尝试使用默认音乐目录
+            if not music_path:
+                # 尝试使用默认音乐目录
+                default_music_dir = get_data_path("input/music")
+                if Path(default_music_dir).exists():
+                    music_extensions = ['.mp3', '.wav', '.m4a', '.aac', '.flac']
+                    music_files = []
+                    for ext in music_extensions:
+                        music_files.extend(list(Path(default_music_dir).glob(f"*{ext}")))
+                        music_files.extend(list(Path(default_music_dir).glob(f"*{ext.upper()}")))
+                    
+                    if music_files:
+                        # 默认使用第一个音乐文件
                         selected_music_path = str(music_files[0])
-                        print(f"【音乐处理】选择第一个音乐: {selected_music_path}")
+                        print(f"【音乐处理】使用默认音乐目录中的音乐: {selected_music_path}")
+                    else:
+                        print(f"【音乐处理】默认音乐目录中没有找到音乐文件: {default_music_dir}")
                 else:
-                    print(f"【音乐处理】音乐文件夹中没有找到音乐文件: {music_path}")
+                    print(f"【音乐处理】默认音乐目录不存在: {default_music_dir}")
             else:
-                print(f"【音乐处理】音乐路径无效: {music_path}")
+                # 根据不同模式选择音乐文件
+                if Path(music_path).is_file():
+                    # 单个音乐文件
+                    selected_music_path = music_path
+                    print(f"【音乐处理】使用单个音乐文件: {selected_music_path}")
+                elif Path(music_path).is_dir():
+                    # 音乐文件夹
+                    music_extensions = ['.mp3', '.wav', '.m4a', '.aac', '.flac']
+                    music_files = []
+                    for ext in music_extensions:
+                        music_files.extend(list(Path(music_path).glob(f"*{ext}")))
+                        music_files.extend(list(Path(music_path).glob(f"*{ext.upper()}")))
+                    
+                    if music_files:
+                        if music_mode == "random":
+                            selected_music_path = str(random.choice(music_files))
+                            print(f"【音乐处理】随机选择音乐: {selected_music_path}")
+                        elif music_mode == "sequence":
+                            # 顺序模式：根据视频索引选择音乐文件
+                            selected_music_path = str(music_files[video_index % len(music_files)])
+                            print(f"【音乐处理】按顺序选择音乐: {selected_music_path} (索引: {video_index % len(music_files)})")
+                        else:  # single模式，选择第一个
+                            selected_music_path = str(music_files[0])
+                            print(f"【音乐处理】选择第一个音乐: {selected_music_path}")
+                    else:
+                        print(f"【音乐处理】音乐文件夹中没有找到音乐文件: {music_path}")
+                else:
+                    print(f"【音乐处理】音乐路径无效: {music_path}")
         
         if has_any_overlay or selected_music_path:
             # 构建FFmpeg命令

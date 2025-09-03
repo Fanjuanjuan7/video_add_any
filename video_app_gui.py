@@ -20,7 +20,8 @@ try:
                                 QLineEdit, QPushButton, QFileDialog, QComboBox, QCheckBox, 
                                 QSpinBox, QDoubleSpinBox, QVBoxLayout, QHBoxLayout, QGridLayout, 
                                 QGroupBox, QMessageBox, QProgressBar, 
-                                QListWidget, QListWidgetItem, QAbstractItemView, QSplitter, QSlider)
+                                QListWidget, QListWidgetItem, QAbstractItemView, QSplitter, QSlider,
+                                QTextEdit)  # 添加QTextEdit导入
     from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSettings
     
 except ImportError as e:
@@ -56,7 +57,8 @@ class ProcessingThread(QThread):
                  subtitle_text_x, subtitle_text_y, random_position, enable_subtitle,
                  enable_background, enable_image, enable_music, music_path, music_mode, music_volume,
                  document_path=None, enable_gif=False, gif_path="", gif_loop_count=-1, 
-                 gif_scale=1.0, gif_x=800, gif_y=100, scale_factor=1.1, image_path=None, quality_settings=None):
+                 gif_scale=1.0, gif_x=800, gif_y=100, scale_factor=1.1, image_path=None, quality_settings=None,
+                 enable_tts=False, tts_voice="zh-CN-XiaoxiaoNeural", tts_volume=100, tts_text=""):  # 添加TTS参数
         super().__init__()
         # 分别存储不同类型的文件
         self.short_videos = short_videos  # 小于9秒的视频
@@ -95,6 +97,11 @@ class ProcessingThread(QThread):
         self.scale_factor = scale_factor
         self.image_path = image_path
         self.quality_settings = quality_settings or {}  # 添加质量设置参数
+        # TTS相关参数
+        self.enable_tts = enable_tts
+        self.tts_voice = tts_voice
+        self.tts_volume = tts_volume
+        self.tts_text = tts_text
     
     def run(self):
         import time
@@ -115,6 +122,7 @@ class ProcessingThread(QThread):
             logging.info(f"📋 处理参数: style={self.style}, lang={self.subtitle_lang}")
             logging.info(f"📋 素材设置: subtitle={self.enable_subtitle}, bg={self.enable_background}, img={self.enable_image}")
             logging.info(f"📋 随机位置: {self.random_position}")
+            logging.info(f"📋 TTS设置: enable={self.enable_tts}, voice={self.tts_voice}")
             
             success_count = 0
             failed_items = []
@@ -209,7 +217,11 @@ class ProcessingThread(QThread):
                                     self.subtitle_width,
                                     quality_settings=self.quality_settings,
                                     progress_callback=update_progress_callback,
-                                    video_index=i
+                                    video_index=i,
+                                    enable_tts=self.enable_tts,
+                                    tts_voice=self.tts_voice,
+                                    tts_volume=self.tts_volume,
+                                    tts_text=self.tts_text
                                 )
                                 
                                 item_end_time = time.time()
@@ -300,7 +312,7 @@ class ProcessingThread(QThread):
                                     
                                     # 对预处理后的视频进行精处理
                                     output_path = Path(self.output_dir) / f"{Path(video_path).stem}_processed.mp4"
-                                    print(f"准备对预处理后的短视频进行精处理...")
+                                    print(f"准备对预处理后的视频进行精处理...")
                                     print(f"输出路径: {output_path}")
                                     
                                     # 定义内部回调函数来更新视频处理进度
@@ -313,7 +325,6 @@ class ProcessingThread(QThread):
                                         self.processing_stage_updated.emit(stage, progress_percent)
                                     
                                     # 对预处理后的视频进行精处理
-                                    from video_core import process_video
                                     print(f"调用process_video进行精处理")
                                     result = process_video(
                                         preprocessed_path, 
@@ -351,12 +362,16 @@ class ProcessingThread(QThread):
                                         self.subtitle_width,
                                         quality_settings=self.quality_settings,
                                         progress_callback=update_progress_callback,
-                                        video_index=current_index
+                                        video_index=folder_items+i,
+                                        enable_tts=self.enable_tts,
+                                        tts_voice=self.tts_voice,
+                                        tts_volume=self.tts_volume,
+                                        tts_text=self.tts_text
                                     )
                                     
                                     item_end_time = time.time()
                                     item_duration = item_end_time - item_start_time
-                                    
+                                    print(f"短视频精处理完成，耗时: {item_duration:.2f}秒")
                                     if result:
                                         success_count += 1
                                         logging.info(f"✅ 短视频处理成功: {Path(video_path).name} (耗时: {item_duration:.1f}秒)")
@@ -390,17 +405,28 @@ class ProcessingThread(QThread):
                                         current_progress,
                                         f"短视频预处理失败: {i+1}/{len(self.short_videos)} - {Path(video_path).name}"
                                     )
+                            except Exception as preprocess_error:
+                                failed_items.append(f"⏱️ {Path(video_path).name}")
+                                logging.error(f"❌ 短视频预处理异常: {Path(video_path).name} - {str(preprocess_error)}")
+                                print(f"❌ 短视频预处理异常: {Path(video_path).name} - {str(preprocess_error)}")
+                                
+                                # 即使异常也更新进度
+                                current_progress = int(((current_index + 1) / total_items) * 100)
+                                self.progress_updated.emit(
+                                    current_progress,
+                                    f"短视频预处理异常: {i+1}/{len(self.short_videos)} - {Path(video_path).name}"
+                                )
                             finally:
                                 # 清理临时目录
                                 try:
                                     import shutil
                                     shutil.rmtree(temp_dir)
-                                except Exception as e:
-                                    print(f"清理临时目录失败: {e}")
-                    except Exception as video_error:
+                                except:
+                                    pass
+                    except Exception as short_video_error:
                         failed_items.append(f"⏱️ {Path(video_path).name}")
-                        logging.error(f"❌ 短视频处理异常: {Path(video_path).name} - {str(video_error)}")
-                        print(f"❌ 短视频处理异常: {Path(video_path).name} - {str(video_error)}")
+                        logging.error(f"❌ 短视频处理异常: {Path(video_path).name} - {str(short_video_error)}")
+                        print(f"❌ 短视频处理异常: {Path(video_path).name} - {str(short_video_error)}")
                         
                         # 即使异常也更新进度
                         current_progress = int(((current_index + 1) / total_items) * 100)
@@ -432,12 +458,12 @@ class ProcessingThread(QThread):
                     
                     try:
                         with log_manager.capture_output():
-                            # 对长视频进行预处理（仅水印处理）
-                            from video_core import preprocess_video_by_type
+                            # 对长视频进行预处理（仅水印处理，不进行正放倒放）
+                            from video_core import preprocess_video_without_reverse
                             import tempfile
                             temp_dir = Path(tempfile.mkdtemp())
                             try:
-                                preprocessed_path = preprocess_video_by_type(video_path, temp_dir)
+                                preprocessed_path = preprocess_video_without_reverse(video_path, temp_dir)
                                 
                                 if preprocessed_path and Path(preprocessed_path).exists():
                                     print(f"长视频预处理完成: {preprocessed_path}")
@@ -450,7 +476,7 @@ class ProcessingThread(QThread):
                                     
                                     # 对预处理后的视频进行精处理
                                     output_path = Path(self.output_dir) / f"{Path(video_path).stem}_processed.mp4"
-                                    print(f"准备对预处理后的长视频进行精处理...")
+                                    print(f"准备对预处理后的视频进行精处理...")
                                     print(f"输出路径: {output_path}")
                                     
                                     # 定义内部回调函数来更新视频处理进度
@@ -463,7 +489,6 @@ class ProcessingThread(QThread):
                                         self.processing_stage_updated.emit(stage, progress_percent)
                                     
                                     # 对预处理后的视频进行精处理
-                                    from video_core import process_video
                                     print(f"调用process_video进行精处理")
                                     result = process_video(
                                         preprocessed_path, 
@@ -501,12 +526,16 @@ class ProcessingThread(QThread):
                                         self.subtitle_width,
                                         quality_settings=self.quality_settings,
                                         progress_callback=update_progress_callback,
-                                        video_index=current_index
+                                        video_index=folder_items+short_items+i,
+                                        enable_tts=self.enable_tts,
+                                        tts_voice=self.tts_voice,
+                                        tts_volume=self.tts_volume,
+                                        tts_text=self.tts_text
                                     )
                                     
                                     item_end_time = time.time()
                                     item_duration = item_end_time - item_start_time
-                                    
+                                    print(f"长视频精处理完成，耗时: {item_duration:.2f}秒")
                                     if result:
                                         success_count += 1
                                         logging.info(f"✅ 长视频处理成功: {Path(video_path).name} (耗时: {item_duration:.1f}秒)")
@@ -540,17 +569,28 @@ class ProcessingThread(QThread):
                                         current_progress,
                                         f"长视频预处理失败: {i+1}/{len(self.long_videos)} - {Path(video_path).name}"
                                     )
+                            except Exception as preprocess_error:
+                                failed_items.append(f"🎬 {Path(video_path).name}")
+                                logging.error(f"❌ 长视频预处理异常: {Path(video_path).name} - {str(preprocess_error)}")
+                                print(f"❌ 长视频预处理异常: {Path(video_path).name} - {str(preprocess_error)}")
+                                
+                                # 即使异常也更新进度
+                                current_progress = int(((current_index + 1) / total_items) * 100)
+                                self.progress_updated.emit(
+                                    current_progress,
+                                    f"长视频预处理异常: {i+1}/{len(self.long_videos)} - {Path(video_path).name}"
+                                )
                             finally:
                                 # 清理临时目录
                                 try:
                                     import shutil
                                     shutil.rmtree(temp_dir)
-                                except Exception as e:
-                                    print(f"清理临时目录失败: {e}")
-                    except Exception as video_error:
+                                except:
+                                    pass
+                    except Exception as long_video_error:
                         failed_items.append(f"🎬 {Path(video_path).name}")
-                        logging.error(f"❌ 长视频处理异常: {Path(video_path).name} - {str(video_error)}")
-                        print(f"❌ 长视频处理异常: {Path(video_path).name} - {str(video_error)}")
+                        logging.error(f"❌ 长视频处理异常: {Path(video_path).name} - {str(long_video_error)}")
+                        print(f"❌ 长视频处理异常: {Path(video_path).name} - {str(long_video_error)}")
                         
                         # 即使异常也更新进度
                         current_progress = int(((current_index + 1) / total_items) * 100)
@@ -559,42 +599,42 @@ class ProcessingThread(QThread):
                             f"长视频处理异常: {i+1}/{len(self.long_videos)} - {Path(video_path).name}"
                         )
                 
-                # 计算总耗时
-                total_time = time.time() - start_time
-                avg_time = total_time / total_files if total_files > 0 else 0
+                # 所有处理完成
+                end_time = time.time()
+                total_duration = end_time - start_time
+                avg_duration = total_duration / total_files if total_files > 0 else 0
                 
-                # 记录总结信息
-                logging.info(f"📊 批量处理完成: 成功 {success_count}/{total_files}, 总耗时 {total_time:.1f}秒")
-                if failed_items:
-                    logging.warning(f"⚠️ 失败项目: {', '.join(failed_items)}")
-                
-                # 准备详细统计信息
+                # 准备统计信息
                 stats = {
                     'total_videos': total_files,
                     'success_count': success_count,
                     'failed_count': len(failed_items),
-                    'total_time': total_time,
-                    'avg_time': avg_time,
-                    'failed_videos': failed_items,
-                    'output_dir': self.output_dir
+                    'failed_videos': [item.split(' ', 1)[1] if ' ' in item else item for item in failed_items],
+                    'total_time': total_duration,
+                    'avg_time': avg_duration,
+                    'output_dir': str(self.output_dir)
                 }
                 
-                self.progress_updated.emit(100, f"完成! 成功处理 {success_count}/{total_files} 个项目")
+                # 发送完成信号
+                self.processing_complete.emit(True, stats)
                 
-                if success_count > 0:
-                    self.processing_complete.emit(True, stats)
-                else:
-                    self.processing_complete.emit(False, stats)
-                    
-            finally:
-                # 清理文件夹处理的临时目录
-                try:
-                    import shutil
-                    shutil.rmtree(folder_temp_dir)
-                    print(f"清理文件夹处理临时目录: {folder_temp_dir}")
-                except Exception as e:
-                    print(f"清理临时目录失败: {e}")
+                # 记录完成日志
+                logging.info(f"🏁 批量处理完成！成功: {success_count}/{total_files} 个，耗时: {total_duration:.1f}秒")
                 
+            except Exception as e:
+                # 发送错误信号
+                error_stats = {
+                    'total_videos': total_files,
+                    'success_count': success_count,
+                    'failed_count': len(failed_items),
+                    'failed_videos': [item.split(' ', 1)[1] if ' ' in item else item for item in failed_items],
+                    'total_time': time.time() - start_time,
+                    'avg_time': (time.time() - start_time) / total_files if total_files > 0 else 0,
+                    'output_dir': str(self.output_dir),
+                    'error': str(e)
+                }
+                self.processing_complete.emit(False, error_stats)
+                logging.error(f"❌ 批量处理过程中出现异常: {str(e)}")
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -610,7 +650,7 @@ class ProcessingThread(QThread):
                 'failed_videos': [f"⏱️ {Path(p).name}" for p in self.short_videos] + 
                                 [f"🎬 {Path(p).name}" for p in self.long_videos] + 
                                 [f"📁 {Path(p).name}" for p in self.folders],
-                'output_dir': self.output_dir,
+                'output_dir': str(self.output_dir),
                 'error': str(e)
             }
             
@@ -1576,6 +1616,7 @@ class VideoProcessorApp(QMainWindow):
         # 语言选择
         self.voice_language_combo = QComboBox()
         self.populate_voice_languages()  # 填充语言选项
+        self.voice_language_combo.currentTextChanged.connect(self.on_voice_language_changed)  # 添加语言变化事件
         
         voice_layout.addWidget(QLabel("语言:"), 1, 0)
         voice_layout.addWidget(self.voice_language_combo, 1, 1)
@@ -1614,6 +1655,30 @@ class VideoProcessorApp(QMainWindow):
         self.auto_match_duration.setToolTip("勾选后会通过调节播放速度使音频时长与视频一致")
         
         voice_layout.addWidget(self.auto_match_duration, 5, 0, 1, 2)
+        
+        # TTS文本输入
+        self.tts_text_input = QTextEdit()
+        self.tts_text_input.setMaximumHeight(60)
+        self.tts_text_input.setPlaceholderText("输入要转换为语音的文本内容")
+        
+        voice_layout.addWidget(QLabel("TTS文本:"), 6, 0)
+        voice_layout.addWidget(self.tts_text_input, 6, 1, 1, 2)
+        
+        # TTS音量控制
+        tts_volume_layout = QHBoxLayout()
+        self.tts_volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.tts_volume_slider.setRange(0, 100)
+        self.tts_volume_slider.setValue(100)
+        self.tts_volume_label = QLabel("100%")
+        self.tts_volume_slider.valueChanged.connect(
+            lambda value: self.tts_volume_label.setText(f"{value}%")
+        )
+        
+        tts_volume_layout.addWidget(self.tts_volume_slider)
+        tts_volume_layout.addWidget(self.tts_volume_label)
+        
+        voice_layout.addWidget(QLabel("TTS音量:"), 7, 0)
+        voice_layout.addLayout(tts_volume_layout, 7, 1, 1, 2)
         
         voice_group.setLayout(voice_layout)
         
@@ -2072,6 +2137,60 @@ class VideoProcessorApp(QMainWindow):
                 'pixfmt_value': self.pixfmt_combo.currentData()
             }
         
+        # 获取TTS参数
+        enable_tts = False
+        tts_voice = "zh-CN-XiaoxiaoNeural"
+        tts_volume = 100
+        tts_text = ""
+        
+        # 检查是否启用了TTS功能
+        if hasattr(self, 'voice_api_combo'):
+            api_platform = self.voice_api_combo.currentData()
+            if api_platform == "edge_tts":
+                enable_tts = True
+                # 获取TTS相关参数
+                tts_voice = self.voice_type_combo.currentData() or "zh-CN-XiaoxiaoNeural"
+                tts_volume = self.tts_volume_slider.value() if hasattr(self, 'tts_volume_slider') else 100
+                # 修改TTS文本获取逻辑：如果用户没有输入文本，则从字幕配置中获取
+                user_tts_text = self.tts_text_input.toPlainText().strip() if hasattr(self, 'tts_text_input') else ""
+                if user_tts_text:
+                    tts_text = user_tts_text
+                else:
+                    # 如果用户没有输入TTS文本，则尝试从字幕配置中获取
+                    print("用户未输入TTS文本，尝试从字幕配置中获取...")
+                    try:
+                        from utils import load_subtitle_config
+                        subtitle_df = load_subtitle_config()
+                        if subtitle_df is not None and not subtitle_df.empty:
+                            # 根据选择的语言获取对应的列
+                            selected_lang = self.lang_combo.currentData()
+                            print(f"当前选择的语言: {selected_lang}")
+                            
+                            # 映射语言到列名
+                            lang_to_column = {
+                                "chinese": "cn_prompt",  # 修改为新的列名
+                                "malay": "malay_prompt",  # 修改为新的列名
+                                "thai": "thai_prompt"  # 修改为新的列名
+                            }
+                            
+                            column_name = lang_to_column.get(selected_lang, "cn_prompt")  # 默认使用中文列
+                            print(f"映射到列名: {column_name}")
+                            
+                            if column_name in subtitle_df.columns:
+                                # 获取第一行的有效文本
+                                valid_texts = subtitle_df[subtitle_df[column_name].notna() & (subtitle_df[column_name] != "")]
+                                if not valid_texts.empty:
+                                    tts_text = str(valid_texts.iloc[0][column_name])
+                                    print(f"从字幕配置中获取TTS文本: {tts_text}")
+                                else:
+                                    print(f"列 '{column_name}' 中没有有效文本")
+                            else:
+                                print(f"字幕配置中未找到列: {column_name}")
+                        else:
+                            print("无法加载字幕配置")
+                    except Exception as e:
+                        print(f"从字幕配置中获取TTS文本时出错: {e}")
+        
         # 启动处理线程，传递分类后的文件列表
         self.processing_thread = ProcessingThread(
             short_videos, long_videos, folders, output_dir, style, lang, 
@@ -2081,7 +2200,8 @@ class VideoProcessorApp(QMainWindow):
             random_position, enable_subtitle, enable_background, enable_image,
             enable_music, music_path, music_mode, music_volume,
             document_path, enable_gif, gif_path, gif_loop_count, gif_scale, gif_x, gif_y, scale_factor, image_path,
-            quality_settings  # 添加质量设置参数
+            quality_settings,  # 添加质量设置参数
+            enable_tts, tts_voice, tts_volume, tts_text  # 添加TTS参数
         )
         
         self.processing_thread.progress_updated.connect(self.update_progress)
@@ -2665,7 +2785,7 @@ class VideoProcessorApp(QMainWindow):
                 return
             
             # 检查必需列
-            required_columns = ['name', 'style', 'malay_title', 'title_thai', 'subtitle']
+            required_columns = ['name', 'style', 'malay_title', 'title_thai', 'zn']
             missing_columns = [col for col in required_columns if col not in df.columns]
             
             if missing_columns:
@@ -2752,6 +2872,8 @@ class VideoProcessorApp(QMainWindow):
                 ("es-ES", "西班牙语"),
                 ("fr-FR", "法语"),
                 ("de-DE", "德语"),
+                ("ms-MY", "马来语"),  # 添加马来语支持
+                ("th-TH", "泰语"),    # 添加泰语支持
             ]
         else:  # elevenlabs
             # ElevenLabs 支持的语言
@@ -2764,6 +2886,8 @@ class VideoProcessorApp(QMainWindow):
                 ("it", "意大利语"),
                 ("pt", "葡萄牙语"),
                 ("pl", "波兰语"),
+                ("ms", "马来语"),     # 添加马来语支持
+                ("th", "泰语"),       # 添加泰语支持
             ]
         
         for lang_code, lang_name in languages:
@@ -2773,6 +2897,11 @@ class VideoProcessorApp(QMainWindow):
         """处理API平台切换"""
         # 重新填充语言选项
         self.populate_voice_languages()
+        # 重新填充音色选项
+        self.populate_voice_types()
+    
+    def on_voice_language_changed(self):
+        """处理语音语言切换"""
         # 重新填充音色选项
         self.populate_voice_types()
     
@@ -2816,6 +2945,16 @@ class VideoProcessorApp(QMainWindow):
                 voice_types = [
                     ("ko-KR-SunHiNeural", "SunHi(韩语女声)"),
                     ("ko-KR-InJoonNeural", "InJoon(韩语男声)"),
+                ]
+            elif language == "ms-MY":  # 马来语
+                voice_types = [
+                    ("ms-MY-YasminNeural", "Yasmin(马来语女声)"),
+                    ("ms-MY-OsmanNeural", "Osman(马来语男声)"),
+                ]
+            elif language == "th-TH":  # 泰语
+                voice_types = [
+                    ("th-TH-PremwadeeNeural", "Premwadee(泰语女声)"),
+                    ("th-TH-NiwatNeural", "Niwat(泰语男声)"),
                 ]
             else:
                 # 其他语言的默认音色
