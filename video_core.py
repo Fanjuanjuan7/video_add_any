@@ -179,6 +179,12 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
             tts_audio_path = temp_dir / "tts_audio.mp3"
             if generate_subtitle_tts(tts_text, tts_voice, str(tts_audio_path)):
                 print(f"TTS音频生成成功: {tts_audio_path}")
+                # 检查生成的音频文件是否存在且不为空
+                if tts_audio_path.exists() and tts_audio_path.stat().st_size > 0:
+                    print(f"TTS音频文件验证成功: {tts_audio_path}")
+                else:
+                    print("TTS音频文件不存在或为空")
+                    tts_audio_path = None
             else:
                 print("TTS音频生成失败")
                 tts_audio_path = None
@@ -229,15 +235,27 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
             return None
             
         # 如果生成了TTS音频，将其添加到视频中
-        if tts_audio_path and tts_audio_path.exists():
+        if tts_audio_path and tts_audio_path.exists() and tts_audio_path.stat().st_size > 0:
             print("将TTS音频添加到视频中...")
             final_with_tts_path = temp_dir / "final_with_tts.mp4"
             if add_tts_audio_to_video(final_path, str(tts_audio_path), str(final_with_tts_path), tts_volume):
                 # 如果成功添加TTS音频，使用带TTS的版本作为最终输出
                 final_path = str(final_with_tts_path)
                 print(f"TTS音频已添加到视频中: {final_path}")
+                # 验证输出文件是否存在
+                if Path(final_path).exists():
+                    print(f"带TTS的视频文件已生成: {final_path}")
+                    # 将最终文件复制到输出路径，确保不会在临时目录被清理时删除
+                    import shutil
+                    shutil.copy2(final_path, output_path)
+                    final_path = str(output_path)
+                else:
+                    print("带TTS的视频文件生成失败")
+                    final_path = final_path.replace("_with_tts", "")  # 回退到原始文件
             else:
                 print("添加TTS音频到视频失败，使用无TTS版本")
+        elif tts_audio_path:
+            print("TTS音频文件不存在或为空，跳过添加TTS音频步骤")
         
         print(f"视频处理完成: {final_path}")
         return final_path
@@ -641,18 +659,19 @@ def add_tts_audio_to_video(video_path, audio_path, output_path, audio_volume=100
                 '-c:v', 'copy',  # 视频流直接复制，不重新编码
                 '-c:a', 'aac',   # 音频编码为AAC
                 '-strict', 'experimental',
+                '-y',  # 覆盖输出文件
                 str(output_path)
             ]
         else:
             # 视频没有音频流，直接添加TTS音频
             cmd = [
                 'ffmpeg', '-y', '-i', str(video_path), '-i', str(audio_path),
-                '-filter_complex', f'[1:a]{audio_volume_filter}[audio];[audio]apad=pad_dur=1[aout]',
-                '-map', '0:v', '-map', '[aout]',
+                '-filter_complex', f'[1:a]{audio_volume_filter}[audio]',
+                '-map', '0:v', '-map', '[audio]',
                 '-c:v', 'copy',  # 视频流直接复制，不重新编码
                 '-c:a', 'aac',   # 音频编码为AAC
-                '-shortest',      # 以最短的流为准
                 '-strict', 'experimental',
+                '-y',  # 覆盖输出文件
                 str(output_path)
             ]
         
@@ -683,10 +702,38 @@ def generate_subtitle_tts(subtitle_text, voice, output_path):
     """
     try:
         # 使用异步方式生成TTS音频
-        result = asyncio.run(generate_tts_audio(subtitle_text, voice, output_path))
+        # 检查是否已经在事件循环中
+        try:
+            # 尝试获取当前事件循环
+            loop = asyncio.get_running_loop()
+            # 如果已经在事件循环中，创建一个新的线程来运行asyncio.run()
+            import threading
+            result = False
+            exception = None
+            
+            def run_in_thread():
+                nonlocal result, exception
+                try:
+                    # 在新线程中运行asyncio.run()
+                    result = asyncio.run(generate_tts_audio(subtitle_text, voice, output_path))
+                except Exception as e:
+                    exception = e
+            
+            thread = threading.Thread(target=run_in_thread)
+            thread.start()
+            thread.join()  # 等待线程完成
+            
+            if exception:
+                raise exception
+                
+        except RuntimeError:
+            # 如果没有运行中的事件循环，使用asyncio.run()
+            result = asyncio.run(generate_tts_audio(subtitle_text, voice, output_path))
         return result
     except Exception as e:
         print(f"生成字幕TTS音频失败: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -1579,6 +1626,8 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
         # 处理音乐逻辑
         selected_music_path = None
         if enable_music:
+            print(f"【音乐处理】开始处理音乐，视频索引: {video_index}")
+            print(f"【音乐处理】音乐参数: enable_music={enable_music}, music_path={music_path}, music_mode={music_mode}, music_volume={music_volume}")
             # 如果启用了音乐但没有指定音乐路径，则尝试使用默认音乐目录
             if not music_path:
                 # 尝试使用默认音乐目录
@@ -1612,21 +1661,45 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                         music_files.extend(list(Path(music_path).glob(f"*{ext}")))
                         music_files.extend(list(Path(music_path).glob(f"*{ext.upper()}")))
                     
+                    print(f"【音乐处理】在音乐文件夹中找到 {len(music_files)} 个音乐文件")
+                    for i, file in enumerate(music_files):
+                        print(f"  [{i}] {file.name}")
+                    
                     if music_files:
+                        print(f"【音乐处理】音乐模式: {music_mode}")
                         if music_mode == "random":
                             selected_music_path = str(random.choice(music_files))
                             print(f"【音乐处理】随机选择音乐: {selected_music_path}")
                         elif music_mode == "sequence":
                             # 顺序模式：根据视频索引选择音乐文件
-                            selected_music_path = str(music_files[video_index % len(music_files)])
-                            print(f"【音乐处理】按顺序选择音乐: {selected_music_path} (索引: {video_index % len(music_files)})")
+                            # 确保索引不会超出范围
+                            music_index = video_index % len(music_files)
+                            selected_music_path = str(music_files[music_index])
+                            print(f"【音乐处理】按顺序选择音乐: {selected_music_path} (索引: {music_index}/{len(music_files)-1}, 视频索引: {video_index})")
+                            
+                            # 添加额外的调试信息
+                            print(f"【音乐处理】调试信息 - 音乐文件列表:")
+                            for idx, music_file in enumerate(music_files):
+                                marker = "<<< 选中" if idx == music_index else ""
+                                print(f"  [{idx}] {music_file.name} {marker}")
                         else:  # single模式，选择第一个
                             selected_music_path = str(music_files[0])
                             print(f"【音乐处理】选择第一个音乐: {selected_music_path}")
+                            # 添加调试信息
+                            print(f"【音乐处理】调试信息 - 音乐文件列表:")
+                            for idx, music_file in enumerate(music_files):
+                                marker = "<<< 选中" if idx == 0 else ""
+                                print(f"  [{idx}] {music_file.name} {marker}")
                     else:
                         print(f"【音乐处理】音乐文件夹中没有找到音乐文件: {music_path}")
                 else:
                     print(f"【音乐处理】音乐路径无效: {music_path}")
+        
+        print(f"【音乐处理】最终选择的音乐路径: {selected_music_path}")
+        if selected_music_path and Path(selected_music_path).exists():
+            print(f"【音乐处理】音乐文件存在，大小: {Path(selected_music_path).stat().st_size} 字节")
+        elif selected_music_path:
+            print(f"【音乐处理】警告：音乐文件不存在！")
         
         if has_any_overlay or selected_music_path:
             # 构建FFmpeg命令
@@ -1638,6 +1711,14 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                 music_index = input_index
                 input_index += 1
                 print(f"【音乐处理】添加音乐输入，索引: {music_index}")
+                print(f"【音乐处理】音乐文件路径: {selected_music_path}")
+                # 检查音乐文件是否存在
+                if Path(selected_music_path).exists():
+                    print(f"【音乐处理】音乐文件存在，大小: {Path(selected_music_path).stat().st_size} 字节")
+                else:
+                    print(f"【音乐处理】警告：音乐文件不存在！")
+            else:
+                print(f"【音乐处理】没有选择音乐文件")
             
             if has_any_overlay:
                 # 完成视频处理的filter_complex
@@ -1711,6 +1792,7 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             else:
                 # 如果没有音乐，不包含音频
                 ffmpeg_command.extend(['-an'])
+                print(f"【音乐处理】没有音乐，移除音频轨道")
             
             ffmpeg_command.append(str(output_with_subtitle))
             
@@ -1748,10 +1830,18 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                         return None
         else:
             print("所有素材功能都已禁用，但需要处理音乐")
+            print(f"【音乐处理】检查音乐参数: selected_music_path={selected_music_path}, enable_music={enable_music}")
             # 如果只有音乐，直接复制视频并添加音乐
             if selected_music_path:
                 volume_ratio = music_volume / 100.0
                 print(f"【音乐处理】只添加音乐，不添加其他素材")
+                print(f"【音乐处理】音乐文件路径: {selected_music_path}")
+                # 检查音乐文件是否存在
+                if Path(selected_music_path).exists():
+                    print(f"【音乐处理】音乐文件存在，大小: {Path(selected_music_path).stat().st_size} 字节")
+                else:
+                    print(f"【音乐处理】警告：音乐文件不存在！")
+                
                 copy_with_music_cmd = [
                     'ffmpeg', '-y',
                     '-i', str(video_path),
@@ -1763,6 +1853,7 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                     '-shortest',
                     str(output_with_subtitle)
                 ]
+                print(f"执行命令: {' '.join(copy_with_music_cmd)}")
                 if not run_ffmpeg_command(copy_with_music_cmd):
                     print("添加音乐失败")
                     return None

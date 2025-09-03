@@ -2,25 +2,18 @@
 # -*- coding: utf-8 -*-
 """
 视频处理辅助函数模块
-将复杂的add_subtitle_to_video函数分解为多个小函数
+提供视频处理过程中需要的辅助功能函数
 """
 
-import subprocess
-import random
-import tempfile
-from pathlib import Path
-from PIL import Image
 import pandas as pd
+from pathlib import Path
+import sys
 
-# 导入工具函数
-from utils import get_video_info, run_ffmpeg_command, get_data_path, load_style_config, find_font_file, find_matching_image
-from log_manager import log_with_capture
-
-
-def load_subtitle_config(document_path):
+def load_subtitle_config(document_path=None):
     """加载字幕配置"""
     subtitle_df = None
     
+    # 如果提供了文档路径且文件存在，加载用户指定的文档
     if document_path and Path(document_path).exists():
         print(f"使用用户选择的文档文件: {document_path}")
         try:
@@ -66,7 +59,7 @@ def load_subtitle_config(document_path):
                     subtitle_df = pd.read_csv(document_path, delimiter='\t')  # 先尝试制表符
                 except:
                     subtitle_df = pd.read_csv(document_path)  # 再尝试逗号
-            
+                
             if subtitle_df is not None:
                 print(f"成功加载用户文档: {len(subtitle_df)} 条记录")
                 print(f"文档列名: {list(subtitle_df.columns)}")
@@ -77,7 +70,71 @@ def load_subtitle_config(document_path):
             print(f"加载用户文档失败: {e}")
             subtitle_df = None
     
+    # 如果没有加载到用户文档，尝试加载默认的字幕配置
+    if subtitle_df is None:
+        try:
+            # 导入工具函数
+            from utils import load_subtitle_config as load_default_config
+            subtitle_df = load_default_config()
+            if subtitle_df is not None and not subtitle_df.empty:
+                print(f"成功加载默认字幕配置: {len(subtitle_df)} 条记录")
+            else:
+                print("默认字幕配置为空或不存在")
+        except Exception as e:
+            print(f"加载默认字幕配置失败: {e}")
+    
     return subtitle_df
+
+
+def get_tts_text_for_video(subtitle_df, language, video_index=0):
+    """
+    根据视频索引获取对应的TTS文本
+    
+    参数:
+        subtitle_df: 字幕配置DataFrame
+        language: 语言选择 (chinese, malay, thai)
+        video_index: 视频索引（从0开始）
+        
+    返回:
+        对应视频的TTS文本
+    """
+    if subtitle_df is None or subtitle_df.empty:
+        print("字幕配置为空")
+        return ""
+    
+    # 定义语言到列名的映射
+    lang_to_column = {
+        "chinese": "cn_prompt",
+        "malay": "malay_prompt", 
+        "thai": "thai_prompt"
+    }
+    
+    # 获取对应的列名
+    column_name = lang_to_column.get(language, "cn_prompt")
+    print(f"获取TTS文本: 语言={language}, 列名={column_name}, 视频索引={video_index}")
+    
+    # 检查列是否存在
+    if column_name not in subtitle_df.columns:
+        print(f"列 '{column_name}' 不存在于字幕配置中")
+        return ""
+    
+    # 获取有效的文本数据
+    valid_texts = subtitle_df[subtitle_df[column_name].notna() & (subtitle_df[column_name] != "")]
+    
+    if valid_texts.empty:
+        print(f"列 '{column_name}' 中没有有效数据")
+        return ""
+    
+    # 如果视频索引超出范围，使用最后一个可用的文本
+    if video_index >= len(valid_texts):
+        video_index = len(valid_texts) - 1
+        print(f"视频索引超出范围，使用最后一个文本: 索引={video_index}")
+    
+    # 获取对应索引的文本
+    tts_text = str(valid_texts.iloc[video_index][column_name])
+    print(f"获取到TTS文本: {tts_text}")
+    
+    return tts_text
 
 
 def process_style_and_language(style, subtitle_lang):
@@ -85,6 +142,7 @@ def process_style_and_language(style, subtitle_lang):
     # 如果是"random"样式，先随机选择一个实际样式
     if style == "random":
         # 从配置文件中动态获取所有可用的样式
+        from utils import load_style_config
         style_config_parser = load_style_config()
         available_styles = []
         
@@ -114,24 +172,29 @@ def process_style_and_language(style, subtitle_lang):
         if subtitle_lang == "chinese":
             chinese_styles = [s for s in available_styles if 'chinese' in s]
             if chinese_styles:
+                import random
                 style = random.choice(chinese_styles)
                 print(f"中文语言，优先选择中文样式: {style}")
             else:
                 # 如果没有中文样式，使用常规样式
+                import random
                 style = random.choice(available_styles)
                 print(f"中文语言但无中文样式，使用常规样式: {style}")
         else:
             # 非中文语言，优先使用非中文样式
             regular_styles = [s for s in available_styles if 'chinese' not in s]
             if regular_styles:
+                import random
                 style = random.choice(regular_styles)
                 print(f"非中文语言，选择非中文样式: {style}")
             else:
                 # 如果没有非中文样式，使用默认样式
+                import random
                 style = random.choice(available_styles)
                 print(f"非中文语言但无非中文样式，使用常规样式: {style}")
         
     if subtitle_lang is None:
+        import random
         available_langs = ["chinese", "malay", "thai"]
         subtitle_lang = random.choice(available_langs)
         print(f"随机选择语言: {subtitle_lang}")
@@ -139,9 +202,10 @@ def process_style_and_language(style, subtitle_lang):
     return style, subtitle_lang
 
 
-def process_random_position(random_position, subtitle_text_x, subtitle_text_y, subtitle_width):
+def process_random_position(random_position, subtitle_x, subtitle_y, subtitle_text_x, subtitle_text_y, subtitle_width):
     """处理随机位置逻辑"""
     if random_position:
+        import random
         # 定义随机区域边界（基于统一坐标系统1080x1920）
         # 用户指定的固定字幕区域：左上角(50,200)到右下角(1030,1720)
         # 注意：1080宽度，左右各留50边距，所以右边界是1030
@@ -177,160 +241,184 @@ def process_random_position(random_position, subtitle_text_x, subtitle_text_y, s
         # 更新位置参数
         subtitle_text_x = new_subtitle_text_x
         subtitle_text_y = new_subtitle_text_y
-    else:
-        print(f"📍 使用固定字幕位置: ({subtitle_text_x}, {subtitle_text_y})")
     
     return subtitle_text_x, subtitle_text_y
 
 
-def process_image_matching(enable_image, original_video_path, video_path, image_path, temp_dir, img_size):
-    """处理图片匹配"""
-    has_image = False
-    matched_image_path = None
-    final_image_path = None  # 初始化final_image_path变量
-    processed_img_path = None  # 初始化processed_img_path变量
-    
-    print(f"🎬 【素材状态调试】图片功能启用状态: {enable_image}")
-    
-    if enable_image:
-        print("📁 图片功能已启用，开始查找匹配图片...")
+def process_image_matching(video_name, image_dir="input/images", custom_image_path=None):
+    """处理图片匹配逻辑"""
+    try:
+        print(f"查找匹配图片: 视频名={video_name}, 图片目录={image_dir}")
         
-        # 使用原始视频路径查找匹配图片（如果有）
-        if original_video_path:
-            original_video_name = Path(original_video_path).stem
-            print(f"📁 使用原始视频名查找图片: {original_video_name}")
-            matched_image_path = find_matching_image(original_video_name, custom_image_path=image_path)
-            
-        # 如果没有找到，使用当前视频路径
-        if not matched_image_path:
-            video_name = Path(video_path).stem
-            print(f"📁 使用当前视频名查找图片: {video_name}")
-            matched_image_path = find_matching_image(video_name, custom_image_path=image_path)
-            
-        # 使用匹配的图片路径
-        final_image_path = matched_image_path
-        
-        if final_image_path:
-            print(f"✅ 找到匹配的图片: {final_image_path}")
+        # 如果提供了自定义图片路径，直接使用
+        if custom_image_path and Path(custom_image_path).exists():
+            print(f"使用自定义图片路径: {custom_image_path}")
+            full_image_dir = custom_image_path
         else:
-            print("⚠️ 没有找到匹配的图片")
-    else:
-        print("❌ 图片功能已禁用，跳过图片查找")
+            # 尝试不同的图片目录路径
+            from utils import get_data_path
+            videoapp_dir_path = Path.cwd() / "VideoApp/input/images"
+            current_dir_path = Path.cwd() / "input/images"
+            
+            if videoapp_dir_path.exists():
+                full_image_dir = str(videoapp_dir_path)
+                print(f"使用VideoApp图片目录: {full_image_dir}")
+            elif current_dir_path.exists():
+                full_image_dir = str(current_dir_path)
+                print(f"使用当前目录图片目录: {full_image_dir}")
+            else:
+                full_image_dir = get_data_path("input/images")
+                print(f"使用默认图片目录: {full_image_dir}")
         
-    if final_image_path and enable_image:
-        print(f"✅ 找到匹配的图片: {final_image_path}")
-        # 处理图片
-        print(f"【图片流程】处理图片 {final_image_path}，大小设置为 {img_size}x{img_size}")
-        processed_img_path = temp_dir / "processed_image.png"
-        # 导入处理函数
-        from video_core import process_image_for_overlay
-        processed_img = process_image_for_overlay(
-            final_image_path,
-            str(processed_img_path),
-            size=(img_size, img_size)  # 使用传入的img_size参数
-        )
-        
-        if not processed_img:
-            print("❌ 处理图片失败，跳过图片叠加")
-            has_image = False
-        else:
-            print(f"✅ 【图片流程】图片处理成功: {processed_img}")
-            has_image = True
-    elif enable_image and not final_image_path:
-        print("⚠️ 图片功能已启用但没有找到匹配的图片")
-        print("📁 尝试使用默认图片...")
-        
-        # 检查图片目录是否存在
-        image_dir = get_data_path("input/images")
-        image_dir_path = Path(image_dir)
-        if enable_image and image_dir_path.exists():
-            print(f"图片目录存在: {image_dir}")
-            # 列出目录中的文件
+        print(f"最终图片目录路径: {full_image_dir}")
+            
+        if not Path(full_image_dir).exists():
             try:
-                image_files = [f.name for f in image_dir_path.iterdir() if f.is_file()]
-                print(f"图片目录中的文件数量: {len(image_files)}")
-                if image_files:
-                    print(f"图片目录中的文件: {image_files[:5]}{'...' if len(image_files) > 5 else ''}")
+                Path(full_image_dir).mkdir(parents=True, exist_ok=True)
+                print(f"已创建图片目录: {full_image_dir}")
             except Exception as e:
-                print(f"列出图片目录文件时出错: {e}")
-        elif enable_image:
-            print(f"图片目录不存在: {image_dir}")
+                print(f"创建图片目录失败: {e}")
+                return None
         
-        # 尝试从图片目录获取任意图片
-        try:
-            image_dir = get_data_path("input/images")
-            if Path(image_dir).exists():
-                image_files = []
-                for ext in ['.jpg', '.jpeg', '.png', '.webp']:
-                    image_files.extend(list(Path(image_dir).glob(f"*{ext}")))
-                    image_files.extend(list(Path(image_dir).glob(f"*{ext.upper()}")))
-                
-                if image_files:
-                    default_image = str(image_files[0])
-                    print(f"📁 使用默认图片: {default_image}")
-                    
-                    processed_img_path = temp_dir / "processed_image.png"
-                    # 导入处理函数
-                    from video_core import process_image_for_overlay
-                    processed_img = process_image_for_overlay(
-                        default_image,
-                        str(processed_img_path),
-                        size=(img_size, img_size)
-                    )
-                    
-                    if processed_img:
-                        print(f"✅ 【图片流程】默认图片处理成功: {processed_img}")
-                        has_image = True
-                        final_image_path = default_image  # 更新final_image_path
-                    else:
-                        print("❌ 默认图片处理失败")
-                        has_image = False
-                else:
-                    print("❌ 图片目录中没有可用图片")
-                    has_image = False
-            else:
-                print(f"❌ 图片目录不存在: {image_dir}")
-                has_image = False
-        except Exception as e:
-            print(f"❌ 获取默认图片失败: {e}")
-            has_image = False
-    else:
-        if not enable_image:
-            print("图片功能已禁用")
-        has_image = False
-    
-    return has_image, final_image_path, processed_img_path
-
-
-def process_gif(enable_gif, gif_path, temp_dir, gif_scale, gif_loop_count, duration, gif_x, gif_y):
-    """处理GIF"""
-    has_gif = False
-    processed_gif_path = None
-    
-    if enable_gif and gif_path and Path(gif_path).exists():
-        print(f"【GIF流程】处理GIF {gif_path}，缩放系数: {gif_scale}，位置: ({gif_x}, {gif_y})，循环次数: {gif_loop_count}")
-        
-        # 检查文件格式
-        file_ext = Path(gif_path).suffix.lower()
-        if file_ext in ['.gif', '.webp']:
-            # 使用改进的GIF处理函数，传递视频时长确保GIF持续整个视频时长
-            # 导入处理函数
-            from video_core import process_animated_gif_for_video
-            processed_gif_path = process_animated_gif_for_video(gif_path, temp_dir, gif_scale, gif_loop_count, duration)
+        # 列出目录中所有文件
+        all_files = [f.name for f in Path(full_image_dir).iterdir() if f.is_file()]
+        print(f"目录中的文件数量: {len(all_files)}")
+        print(f"目录中的所有文件: {all_files}")
             
-            if processed_gif_path:
-                has_gif = True
-                print(f"【GIF流程】GIF处理成功: {processed_gif_path}")
-            else:
-                print(f"【GIF流程】GIF处理失败")
-        else:
-            print(f"【GIF流程】不支持的文件格式: {file_ext}")
-    else:
-        if not enable_gif:
-            print("GIF功能已禁用")
-        elif not gif_path:
-            print("未指定GIF路径")
-        else:
+        # 支持的图片扩展名
+        image_extensions = ['.jpg', '.jpeg', '.png', '.webp']
+        
+        # 查找完全匹配的图片
+        for ext in image_extensions:
+            image_path = Path(full_image_dir) / f"{video_name}{ext}"
+            if image_path.exists():
+                print(f"找到完全匹配的图片: {image_path}")
+                return str(image_path)
+        
+        # 如果没有完全匹配，查找包含视频名称的图片
+        matched_images = []
+        for file in all_files:
+            file_path = Path(full_image_dir) / file
+            if file_path.is_file() and any(file.lower().endswith(ext.lower()) for ext in image_extensions):
+                print(f"检查文件: {file}")
+                # 提取视频名称的关键部分（例如M2-romer_003）
+                video_key = video_name.split('_')[0] if '_' in video_name else video_name
+                if video_key.lower() in file.lower():
+                    print(f"  - 匹配成功: {file} (关键词: {video_key})")
+                    matched_images.append((str(file_path), len(file)))
+                else:
+                    print(f"  - 不匹配: {file}")
+        
+        # 按文件名长度排序，选择最短的（通常是最接近的匹配）
+        if matched_images:
+            matched_images.sort(key=lambda x: x[1])
+            best_match = matched_images[0][0]
+            print(f"找到最佳匹配的图片: {best_match}")
+            return best_match
+        
+        # 如果没有匹配，返回目录中的第一张图片（如果有）
+        for file in all_files:
+            file_path = Path(full_image_dir) / file
+            if file_path.is_file() and any(file.lower().endswith(ext.lower()) for ext in image_extensions):
+                print(f"没有匹配，使用目录中的第一张图片: {file_path}")
+                return str(file_path)
+                    
+        print(f"未找到与 {video_name} 匹配的图片，也没有找到任何可用图片")
+        return None
+    except Exception as e:
+        print(f"查找匹配图片时出错: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def process_gif(gif_path, temp_dir, scale_factor=1.0, loop_count=-1, video_duration=None):
+    """处理GIF逻辑"""
+    try:
+        if not Path(gif_path).exists():
             print(f"GIF文件不存在: {gif_path}")
-    
-    return has_gif, processed_gif_path
+            return None
+        
+        # 输出路径
+        from pathlib import Path
+        processed_gif_path = Path(temp_dir) / "processed_animated_gif.gif"
+        
+        # 如果提供了视频时长，计算需要的循环次数
+        if video_duration is not None:
+            # 获取原始GIF的持续时间
+            import subprocess
+            gif_info_cmd = [
+                'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                '-of', 'default=noprint_wrappers=1:nokey=1', str(gif_path)
+            ]
+            
+            try:
+                result = subprocess.run(gif_info_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                gif_duration = float(result.stdout.decode().strip())
+                print(f"原始GIF时长: {gif_duration} 秒")
+                
+                # 计算需要循环的次数
+                if gif_duration > 0:
+                    required_loops = int(video_duration / gif_duration) + 1
+                    print(f"视频时长: {video_duration} 秒，需要循环 {required_loops} 次")
+                else:
+                    required_loops = 10  # 默认循环10次
+                    
+            except Exception as e:
+                print(f"获取GIF信息失败，使用默认循环次数: {e}")
+                required_loops = 10
+        else:
+            required_loops = 10  # 默认循环10次
+            
+        # 构建FFmpeg命令来处理GIF，保持动画特性
+        import subprocess
+        gif_cmd = [
+            'ffmpeg', '-y',
+            '-stream_loop', str(required_loops),  # 循环播放
+            '-i', str(gif_path)
+        ]
+        
+        # 如果提供了视频时长，限制GIF时长
+        if video_duration is not None:
+            gif_cmd.extend(['-t', str(video_duration)])
+        
+        # 添加缩放过滤器（如果需要）
+        filters = []
+        if scale_factor != 1.0:
+            filters.append(f"scale=iw*{scale_factor}:ih*{scale_factor}")
+        
+        # 添加GIF处理过滤器，保持动画
+        if filters:
+            filter_str = ",".join(filters)
+            gif_cmd.extend([
+                '-vf', f'{filter_str},split[a][b];[a]palettegen=reserve_transparent=on:transparency_color=ffffff[p];[b][p]paletteuse=alpha_threshold=128'
+            ])
+        else:
+            gif_cmd.extend([
+                '-vf', 'split[a][b];[a]palettegen=reserve_transparent=on:transparency_color=ffffff[p];[b][p]paletteuse=alpha_threshold=128'
+            ])
+        
+        # 设置循环参数
+        if loop_count == -1:
+            gif_cmd.extend(['-loop', '0'])  # 无限循环
+        else:
+            gif_cmd.extend(['-loop', str(loop_count)])
+        
+        gif_cmd.extend([
+            '-f', 'gif',
+            str(processed_gif_path)
+        ])
+        
+        print(f"【GIF动画处理】执行命令: {' '.join(gif_cmd)}")
+        
+        result = subprocess.run(gif_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        print(f"【GIF动画处理】处理成功: {processed_gif_path}")
+        return str(processed_gif_path)
+        
+    except subprocess.CalledProcessError as e:
+        print(f"【GIF动画处理】处理失败: {e}")
+        print(f"stderr: {e.stderr.decode()}")
+        return None
+    except Exception as e:
+        print(f"【GIF动画处理】处理异常: {e}")
+        return None
