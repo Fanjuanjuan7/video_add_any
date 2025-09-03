@@ -11,23 +11,22 @@ import shutil
 from pathlib import Path
 import tempfile
 import random
-from PIL import Image, ImageDraw, ImageFont
+import pandas as pd
 import time
 import logging
-import pandas as pd
 import asyncio
 
 # 导入工具函数
-from utils import get_video_info, run_ffmpeg_command, get_data_path, ensure_dir, load_style_config, find_font_file, find_matching_image, generate_tts_audio
+from utils import get_video_info, run_ffmpeg_command, get_data_path, ensure_dir, load_style_config, find_font_file, find_matching_image, generate_tts_audio, load_subtitle_config
 
 # 导入日志管理器
 from log_manager import init_logging, log_with_capture
 
-# 导入辅助函数
-from video_helpers import load_subtitle_config, process_style_and_language, process_random_position, process_image_matching, process_gif
-
 # 初始化日志系统
 log_manager = init_logging()
+
+# 全局变量用于存储音乐索引
+selected_music_index = None
 
 
 def create_rounded_rect_background(width, height, radius, output_path, bg_color=(0, 0, 0, 128), sample_frame=None):
@@ -91,11 +90,8 @@ import subprocess
 import tempfile
 import time
 import uuid
-from datetime import datetime
 from pathlib import Path
 
-import cv2
-import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from log_manager import log_with_capture
@@ -1447,64 +1443,63 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             
         # 构建复杂过滤器
         logging.info("🔍 开始构建过滤器链")
-        filter_complex = f"[0:v]trim=duration={duration}[v1];"
-        current_video = "v1"
-        next_video_index = 2
-        logging.info(f"  🎬 基础视频流: [0:v] -> [v1]")
+        filter_complex_parts = [f"[0:v]trim=duration={duration}[v1]"]
+        current_stream = "v1"
+        stream_index = 2
         
         # 格式化图层
         logging.info("🎨 格式化图层")
-        if enable_subtitle and subtitle_index is not None:
-            filter_complex += f"[{subtitle_index}:v]format=rgba[s1];"
-            logging.info(f"  📝 字幕图层: [{subtitle_index}:v] -> [s1]")
-            
         if enable_background and bg_index is not None:
-            filter_complex += f"[{bg_index}:v]format=rgba[bg];"
+            filter_complex_parts.append(f"[{bg_index}:v]format=rgba[bg]")
             logging.info(f"  🎨 背景图层: [{bg_index}:v] -> [bg]")
             
         if enable_image and img_index is not None:
-            filter_complex += f"[{img_index}:v]format=rgba[img];"
+            filter_complex_parts.append(f"[{img_index}:v]format=rgba[img]")
             logging.info(f"  📸 图片图层: [{img_index}:v] -> [img]")
             
         if enable_gif and gif_index is not None:
-            filter_complex += f"[{gif_index}:v]format=rgba[gif];"
+            filter_complex_parts.append(f"[{gif_index}:v]format=rgba[gif]")
             logging.info(f"  🎞️ GIF图层: [{gif_index}:v] -> [gif]")
             
+        if enable_subtitle and subtitle_index is not None:
+            filter_complex_parts.append(f"[{subtitle_index}:v]format=rgba[s1]")
+            logging.info(f"  📝 字幕图层: [{subtitle_index}:v] -> [s1]")
+        
         # 叠加背景（如果启用）
         logging.info("🔄 开始叠加层处理")
         if enable_background and bg_index is not None:
-            overlay_cmd = f"[{current_video}][bg]overlay=x='if(lt(t,{entrance_duration}),{bg_start_x}+({bg_final_x}-({bg_start_x}))*t/{entrance_duration},{bg_final_x})':y={bg_y_position}:shortest=0:format=auto[v{next_video_index}];"
-            filter_complex += overlay_cmd
-            logging.info(f"  🎨 添加背景叠加: {current_video} + bg -> v{next_video_index}")
+            cmd = f"[{current_stream}][bg]overlay=x='if(lt(t,{entrance_duration}),{bg_start_x}+({bg_final_x}-({bg_start_x}))*t/{entrance_duration},{bg_final_x})':y={bg_y_position}:shortest=0:format=auto[v{stream_index}]"
+            filter_complex_parts.append(cmd)
+            logging.info(f"  🎨 添加背景叠加: {current_stream} + bg -> v{stream_index}")
             logging.info(f"    位置: x={bg_final_x}, y={bg_y_position}")
-            current_video = f"v{next_video_index}"
-            next_video_index += 1
+            current_stream = f"v{stream_index}"
+            stream_index += 1
         else:
             if enable_background:
                 logging.warning(f"  ⚠️ 背景启用但bg_index为None")
         
         # 叠加图片（如果启用）
         if enable_image and img_index is not None:
-            overlay_cmd = f"[{current_video}][img]overlay=x='if(lt(t,{entrance_duration}),{img_start_x}+({img_x_position}-({img_start_x}))*t/{entrance_duration},{img_x_position})':y={img_final_position}:shortest=0:format=auto[v{next_video_index}];"
-            filter_complex += overlay_cmd
-            logging.info(f"  📸 添加图片叠加: {current_video} + img -> v{next_video_index}")
+            cmd = f"[{current_stream}][img]overlay=x='if(lt(t,{entrance_duration}),{img_start_x}+({img_x_position}-({img_start_x}))*t/{entrance_duration},{img_x_position})':y={img_final_position}:shortest=0:format=auto[v{stream_index}]"
+            filter_complex_parts.append(cmd)
+            logging.info(f"  📸 添加图片叠加: {current_stream} + img -> v{stream_index}")
             logging.info(f"    位置: x={img_x_position}, y={img_final_position}")
-            current_video = f"v{next_video_index}"
-            next_video_index += 1
+            current_stream = f"v{stream_index}"
+            stream_index += 1
         else:
             if enable_image:
                 logging.warning(f"  ⚠️ 图片启用但img_index为None或has_image为False")
             
+        # 叠加GIF（如果启用）
         if enable_gif and gif_index is not None:
             # 保持GIF动画特性，使用正确的overlay语法
-            # 添加setpts过滤器确保GIF动画与视频同步
-            overlay_cmd = f"[{current_video}][gif]overlay=x={gif_x}:y={gif_y}:shortest=0:repeatlast=0[v{next_video_index}];"
-            filter_complex += overlay_cmd
-            logging.info(f"  🎞️ 添加GIF叠加: {current_video} + gif -> v{next_video_index}")
+            cmd = f"[{current_stream}][gif]overlay=x={gif_x}:y={gif_y}:shortest=0:repeatlast=0[v{stream_index}]"
+            filter_complex_parts.append(cmd)
+            logging.info(f"  🎞️ 添加GIF叠加: {current_stream} + gif -> v{stream_index}")
             logging.info(f"    位置: x={gif_x}, y={gif_y}")
             logging.info(f"    修复说明: 保持GIF动画特性")
-            current_video = f"v{next_video_index}"
-            next_video_index += 1
+            current_stream = f"v{stream_index}"
+            stream_index += 1
         else:
             if enable_gif:
                 logging.warning(f"  ⚠️ GIF启用但gif_index为None或has_gif为False")
@@ -1538,21 +1533,32 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                 print("⚠️ 无法获取视频信息，使用原始坐标")
                 logging.warning("⚠️ 无法获取视频信息，使用原始坐标")
             
-            overlay_cmd = f"[{current_video}][s1]overlay=x={scaled_subtitle_x}:y='if(lt(t,{entrance_duration}),{scaled_start_y}-({scaled_start_y}-{scaled_final_y})*t/{entrance_duration},{scaled_final_y})':shortest=0:format=auto"
-            filter_complex += overlay_cmd
-            logging.info(f"  📝 添加字幕叠加: {current_video} + s1 -> 最终输出")
+            cmd = f"[{current_stream}][s1]overlay=x={scaled_subtitle_x}:y='if(lt(t,{entrance_duration}),{scaled_start_y}-({scaled_start_y}-{scaled_final_y})*t/{entrance_duration},{scaled_final_y})':shortest=0:format=auto[v{stream_index}]"
+            filter_complex_parts.append(cmd)
+            logging.info(f"  📝 添加字幕叠加: {current_stream} + s1 -> v{stream_index}")
             logging.info(f"    位置: x={scaled_subtitle_x}, y={scaled_final_y}")
             logging.info(f"    随机位置: {random_position}")
+            current_stream = f"v{stream_index}"
+            stream_index += 1
         else:
-            # 如果没有字幕，移除最后的分号
-            filter_complex = filter_complex.rstrip(';')
             if enable_subtitle:
                 logging.warning(f"  ⚠️ 字幕启用但subtitle_index为None或subtitle_img为None")
-            
-        logging.info(f"  🔗 最终过滤器链: {filter_complex}")
         
         # 检查是否有任何素材需要处理
         has_any_overlay = (enable_subtitle and subtitle_img) or (enable_background and bg_img) or (enable_image and has_image) or (enable_gif and has_gif)
+        
+        # 组合过滤器链，并确保最终输出端点正确设置
+        if has_any_overlay:
+            # 确保最终输出有一个明确的标签[v]
+            if current_stream != "v1":
+                # 如果有叠加操作，将最终流标记为[v]
+                filter_complex_parts.append(f"[{current_stream}]null[v]")
+            else:
+                # 如果没有叠加操作，直接将基础视频流标记为[v]
+                filter_complex_parts.append("[v1]null[v]")
+        
+        filter_complex = ";".join(filter_complex_parts)
+        logging.info(f"  🔗 最终过滤器链: {filter_complex}")
         
         # 添加详细的调试信息
         logging.info(f"🚿 【素材状态调试】完整状态检查")
@@ -1673,14 +1679,15 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                         elif music_mode == "sequence":
                             # 顺序模式：根据视频索引选择音乐文件
                             # 确保索引不会超出范围
-                            music_index = video_index % len(music_files)
-                            selected_music_path = str(music_files[music_index])
-                            print(f"【音乐处理】按顺序选择音乐: {selected_music_path} (索引: {music_index}/{len(music_files)-1}, 视频索引: {video_index})")
+                            global selected_music_index
+                            selected_music_index = video_index % len(music_files)
+                            selected_music_path = str(music_files[selected_music_index])
+                            print(f"【音乐处理】按顺序选择音乐: {selected_music_path} (索引: {selected_music_index}/{len(music_files)-1}, 视频索引: {video_index})")
                             
                             # 添加额外的调试信息
                             print(f"【音乐处理】调试信息 - 音乐文件列表:")
                             for idx, music_file in enumerate(music_files):
-                                marker = "<<< 选中" if idx == music_index else ""
+                                marker = "<<< 选中" if idx == selected_music_index else ""
                                 print(f"  [{idx}] {music_file.name} {marker}")
                         else:  # single模式，选择第一个
                             selected_music_path = str(music_files[0])
@@ -1690,39 +1697,47 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                             for idx, music_file in enumerate(music_files):
                                 marker = "<<< 选中" if idx == 0 else ""
                                 print(f"  [{idx}] {music_file.name} {marker}")
-                    else:
-                        print(f"【音乐处理】音乐文件夹中没有找到音乐文件: {music_path}")
+                    else:  # single模式，选择第一个
+                        selected_music_path = str(music_files[0])
+                        print(f"【音乐处理】选择第一个音乐: {selected_music_path}")
+                        # 添加调试信息
+                        print(f"【音乐处理】调试信息 - 音乐文件列表:")
+                        for idx, music_file in enumerate(music_files):
+                            marker = "<<< 选中" if idx == 0 else ""
+                            print(f"  [{idx}] {music_file.name} {marker}")
                 else:
-                    print(f"【音乐处理】音乐路径无效: {music_path}")
-        
+                    print(f"【音乐处理】音乐文件夹中没有找到音乐文件: {music_path}")
+        else:
+            print(f"【音乐处理】音乐功能未启用")
+
         print(f"【音乐处理】最终选择的音乐路径: {selected_music_path}")
         if selected_music_path and Path(selected_music_path).exists():
             print(f"【音乐处理】音乐文件存在，大小: {Path(selected_music_path).stat().st_size} 字节")
         elif selected_music_path:
             print(f"【音乐处理】警告：音乐文件不存在！")
+            print(f"【音乐处理】检查的路径: {selected_music_path}")
+            print(f"【音乐处理】路径类型: {type(selected_music_path)}")
         
-        if has_any_overlay or selected_music_path:
-            # 构建FFmpeg命令
-            input_index = 1  # 视频输入为0，从1开始计算其他输入
-            
-            # 音乐输入
-            if selected_music_path:
-                ffmpeg_command.extend(['-i', selected_music_path])
-                music_index = input_index
-                input_index += 1
-                print(f"【音乐处理】添加音乐输入，索引: {music_index}")
-                print(f"【音乐处理】音乐文件路径: {selected_music_path}")
-                # 检查音乐文件是否存在
-                if Path(selected_music_path).exists():
-                    print(f"【音乐处理】音乐文件存在，大小: {Path(selected_music_path).stat().st_size} 字节")
-                else:
-                    print(f"【音乐处理】警告：音乐文件不存在！")
+        # 构建FFmpeg命令
+        input_index = 1  # 视频输入为0，从1开始计算其他输入
+        
+        # 音乐输入
+        if selected_music_path:
+            ffmpeg_command.extend(['-i', selected_music_path])
+            music_index = input_index
+            input_index += 1
+            print(f"【音乐处理】添加音乐输入，索引: {music_index}")
+            print(f"【音乐处理】音乐文件路径: {selected_music_path}")
+            # 检查音乐文件是否存在
+            if Path(selected_music_path).exists():
+                print(f"【音乐处理】音乐文件存在，大小: {Path(selected_music_path).stat().st_size} 字节")
             else:
-                print(f"【音乐处理】没有选择音乐文件")
-            
-            if has_any_overlay:
-                # 完成视频处理的filter_complex
-                ffmpeg_command.extend(['-filter_complex', filter_complex])
+                print(f"【音乐处理】警告：音乐文件不存在！")
+        else:
+            print(f"【音乐处理】没有选择音乐文件")
+        
+        # 始终构建FFmpeg命令，确保音乐能够正确处理
+        if has_any_overlay or selected_music_path:
             
             # 解析质量设置参数
             if quality_settings:
@@ -1776,21 +1791,46 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             if tune_value and tune_value != 'none':
                 ffmpeg_command.extend(['-tune', tune_value])
             
-            # 音频处理
+            # 添加过滤器链（如果需要叠加素材）
+            if has_any_overlay:
+                ffmpeg_command.extend(['-filter_complex', filter_complex])
+            
+            # 音频处理 - 修复音频流映射
             if selected_music_path:
                 # 计算音量调节值（50% = 0.5）
                 volume_ratio = music_volume / 100.0
                 print(f"【音乐处理】音量比例: {volume_ratio}")
                 
-                ffmpeg_command.extend([
-                    '-c:a', 'aac',
-                    '-b:a', '128k',
-                    '-af', f'volume={volume_ratio}',  # 调节音量
-                    '-shortest'  # 以最短的流为准（视频结束时音频也结束）
-                ])
+                # 添加音频流映射和处理参数
+                if has_any_overlay:
+                    # 如果有叠加素材，视频流来自过滤器链
+                    ffmpeg_command.extend([
+                        '-map', '[v]',  # 映射过滤器链的视频输出
+                        '-map', f'{music_index}:a?',  # 映射音乐的音频流，?表示如果不存在则忽略
+                        '-c:a', 'aac',
+                        '-b:a', '128k',
+                        '-af', f'volume={volume_ratio}',  # 调节音量
+                        '-shortest'  # 以最短的流为准（视频结束时音频也结束）
+                    ])
+                else:
+                    # 如果没有叠加素材，直接映射视频流
+                    ffmpeg_command.extend([
+                        '-map', '0:v',  # 映射视频流
+                        '-map', f'{music_index}:a?',  # 映射音乐的音频流，?表示如果不存在则忽略
+                        '-c:a', 'aac',
+                        '-b:a', '128k',
+                        '-af', f'volume={volume_ratio}',  # 调节音量
+                        '-shortest'  # 以最短的流为准（视频结束时音频也结束）
+                    ])
                 print(f"【音乐处理】添加音频编码参数，音量: {music_volume}%")
             else:
                 # 如果没有音乐，不包含音频
+                if has_any_overlay:
+                    # 如果有叠加素材，映射过滤器链的视频输出
+                    ffmpeg_command.extend(['-map', '[v]'])
+                else:
+                    # 如果没有叠加素材，直接映射视频流
+                    ffmpeg_command.extend(['-map', '0:v'])
                 ffmpeg_command.extend(['-an'])
                 print(f"【音乐处理】没有音乐，移除音频轨道")
             
@@ -1850,6 +1890,8 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                     '-c:a', 'aac',
                     '-b:a', '128k',
                     '-af', f'volume={volume_ratio}',
+                    '-map', '0:v',  # 映射视频流
+                    '-map', '1:a?',  # 映射音频流，?表示如果不存在则忽略
                     '-shortest',
                     str(output_with_subtitle)
                 ]
@@ -1910,8 +1952,6 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             shutil.rmtree(temp_dir)
         except:
             pass
-
-            pass  # 这个重复的pass语句导致了错误
 
 
 def fallback_static_subtitle(video_path, subtitle_img_path, output_path, temp_dir, quicktime_compatible=False):

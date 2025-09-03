@@ -5,85 +5,9 @@
 提供视频处理过程中需要的辅助功能函数
 """
 
-import pandas as pd
 from pathlib import Path
 import sys
-
-def load_subtitle_config(document_path=None):
-    """加载字幕配置"""
-    subtitle_df = None
-    
-    # 如果提供了文档路径且文件存在，加载用户指定的文档
-    if document_path and Path(document_path).exists():
-        print(f"使用用户选择的文档文件: {document_path}")
-        try:
-            file_ext = Path(document_path).suffix.lower()
-            if file_ext == '.csv':
-                subtitle_df = pd.read_csv(document_path)
-            elif file_ext in ['.xlsx', '.xls']:
-                subtitle_df = pd.read_excel(document_path)
-            elif file_ext == '.md':
-                # 简单的Markdown表格解析
-                with open(document_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                # 尝试解析Markdown表格
-                lines = content.strip().split('\n')
-                # 查找表格开始
-                table_started = False
-                headers = []
-                data_rows = []
-                
-                for line in lines:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    if '|' in line and not table_started:
-                        # 表头行
-                        headers = [h.strip() for h in line.split('|') if h.strip()]
-                        table_started = True
-                    elif '|' in line and table_started and not line.startswith('|---'):
-                        # 数据行（跳过分隔符行）
-                        if not all(c in '-|: ' for c in line):  # 不是分隔符行
-                            row_data = [d.strip() for d in line.split('|') if d.strip() or d.strip() == '']
-                            if len(row_data) >= len(headers):  # 确保数据列数够
-                                data_rows.append(row_data[:len(headers)])
-                
-                if headers and data_rows:
-                    subtitle_df = pd.DataFrame(data_rows, columns=pd.Index(headers))
-                    print(f"成功解析Markdown表格: {len(subtitle_df)} 条记录")
-                else:
-                    print("Markdown文件中未找到有效的表格格式")
-            elif file_ext == '.txt':
-                # 尝试作为CSV或制表符分隔的文件读取
-                try:
-                    subtitle_df = pd.read_csv(document_path, delimiter='\t')  # 先尝试制表符
-                except:
-                    subtitle_df = pd.read_csv(document_path)  # 再尝试逗号
-                
-            if subtitle_df is not None:
-                print(f"成功加载用户文档: {len(subtitle_df)} 条记录")
-                print(f"文档列名: {list(subtitle_df.columns)}")
-            else:
-                print("无法解析用户选择的文档文件")
-                
-        except Exception as e:
-            print(f"加载用户文档失败: {e}")
-            subtitle_df = None
-    
-    # 如果没有加载到用户文档，尝试加载默认的字幕配置
-    if subtitle_df is None:
-        try:
-            # 导入工具函数
-            from utils import load_subtitle_config as load_default_config
-            subtitle_df = load_default_config()
-            if subtitle_df is not None and not subtitle_df.empty:
-                print(f"成功加载默认字幕配置: {len(subtitle_df)} 条记录")
-            else:
-                print("默认字幕配置为空或不存在")
-        except Exception as e:
-            print(f"加载默认字幕配置失败: {e}")
-    
-    return subtitle_df
+import subprocess
 
 
 def get_tts_text_for_video(subtitle_df, language, video_index=0):
@@ -116,6 +40,7 @@ def get_tts_text_for_video(subtitle_df, language, video_index=0):
     # 检查列是否存在
     if column_name not in subtitle_df.columns:
         print(f"列 '{column_name}' 不存在于字幕配置中")
+        print(f"可用列名: {list(subtitle_df.columns)}")
         return ""
     
     # 获取有效的文本数据
@@ -340,13 +265,11 @@ def process_gif(gif_path, temp_dir, scale_factor=1.0, loop_count=-1, video_durat
             return None
         
         # 输出路径
-        from pathlib import Path
         processed_gif_path = Path(temp_dir) / "processed_animated_gif.gif"
         
         # 如果提供了视频时长，计算需要的循环次数
         if video_duration is not None:
             # 获取原始GIF的持续时间
-            import subprocess
             gif_info_cmd = [
                 'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
                 '-of', 'default=noprint_wrappers=1:nokey=1', str(gif_path)
@@ -371,7 +294,6 @@ def process_gif(gif_path, temp_dir, scale_factor=1.0, loop_count=-1, video_durat
             required_loops = 10  # 默认循环10次
             
         # 构建FFmpeg命令来处理GIF，保持动画特性
-        import subprocess
         gif_cmd = [
             'ffmpeg', '-y',
             '-stream_loop', str(required_loops),  # 循环播放
