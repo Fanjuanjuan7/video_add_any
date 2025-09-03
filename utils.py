@@ -11,8 +11,8 @@ import subprocess
 import shutil
 from pathlib import Path
 import time
-import pandas as pd
 import ast
+import pandas as pd
 
 
 # 路径相关函数
