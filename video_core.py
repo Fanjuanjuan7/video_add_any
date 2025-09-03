@@ -2085,44 +2085,6 @@ def process_folder_videos(folder_path, temp_dir, transition_duration=0.3):
         return None
 
 
-def preprocess_video_without_reverse(video_path, temp_dir, duration=None):
-    """
-    视频预处理函数 - 仅进行水印处理，不进行正放倒放处理
-    
-    参数:
-        video_path: 视频文件路径
-        temp_dir: 临时目录路径
-        duration: 视频时长（秒），如果为None则自动获取
-        
-    返回:
-        预处理后的视频路径，失败返回None
-    """
-    from pathlib import Path
-    
-    print(f"开始预处理视频（不进行正放倒放）: {video_path}")
-    
-    # 获取视频信息
-    if duration is None:
-        video_info = get_video_info(video_path)
-        if not video_info:
-            print("无法获取视频信息")
-            return None
-        width, height, duration = video_info
-    
-    print(f"视频时长: {duration}秒")
-    
-    # 对所有视频都进行水印处理（缩放裁剪去水印），但不进行正放倒放处理
-    print(f"进行水印处理，缩放系数: 1.1")
-    processed_path = process_normal_video(video_path, temp_dir, scale_factor=1.1)
-    
-    if not processed_path:
-        print("水印处理失败")
-        return None
-    
-    print(f"预处理完成: {processed_path}")
-    return processed_path
-
-
 def batch_process_videos(style=None, subtitle_lang=None, quicktime_compatible=False, 
                          img_position_x=100, img_position_y=0, font_size=70, 
                          subtitle_x=-50, subtitle_y=1100, bg_width=1000, bg_height=180, img_size=420,
