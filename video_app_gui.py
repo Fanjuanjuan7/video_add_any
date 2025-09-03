@@ -50,7 +50,7 @@ class ProcessingThread(QThread):
     processing_complete = pyqtSignal(bool, dict)  # 修改为dict传递统计信息
     processing_stage_updated = pyqtSignal(str, float)  # 新增信号，用于更新处理阶段和进度
     
-    def __init__(self, video_paths, output_dir, style, subtitle_lang, 
+    def __init__(self, short_videos, long_videos, folders, output_dir, style, subtitle_lang, 
                  quicktime_compatible, img_position_x, img_position_y, 
                  font_size, subtitle_width, subtitle_x, subtitle_y, bg_width, bg_height, img_size,
                  subtitle_text_x, subtitle_text_y, random_position, enable_subtitle,
@@ -58,7 +58,10 @@ class ProcessingThread(QThread):
                  document_path=None, enable_gif=False, gif_path="", gif_loop_count=-1, 
                  gif_scale=1.0, gif_x=800, gif_y=100, scale_factor=1.1, image_path=None, quality_settings=None):
         super().__init__()
-        self.video_paths = video_paths
+        # 分别存储不同类型的文件
+        self.short_videos = short_videos  # 小于9秒的视频
+        self.long_videos = long_videos    # 大于等于9秒的视频
+        self.folders = folders            # 文件夹列表
         self.output_dir = output_dir
         self.style = style
         self.subtitle_lang = subtitle_lang
@@ -95,169 +98,518 @@ class ProcessingThread(QThread):
     
     def run(self):
         import time
+        import tempfile
+        from pathlib import Path
+        from video_core import process_video, process_folder_videos
+        
         start_time = time.time()
         
         try:
             # 获取日志管理器并记录开始信息
             log_manager = get_log_manager()
-            logging.info(f"🚀 开始批量处理视频，总数: {len(self.video_paths)} 个")
+            total_files = len(self.short_videos) + len(self.long_videos) + len(self.folders)
+            logging.info(f"🚀 开始批量处理，总计: {total_files} 个项目")
+            logging.info(f"  - 短视频 (<9秒): {len(self.short_videos)} 个")
+            logging.info(f"  - 长视频 (>=9秒): {len(self.long_videos)} 个")
+            logging.info(f"  - 文件夹: {len(self.folders)} 个")
             logging.info(f"📋 处理参数: style={self.style}, lang={self.subtitle_lang}")
             logging.info(f"📋 素材设置: subtitle={self.enable_subtitle}, bg={self.enable_background}, img={self.enable_image}")
             logging.info(f"📋 随机位置: {self.random_position}")
             
-            total_videos = len(self.video_paths)
             success_count = 0
-            failed_videos = []
+            failed_items = []
             
-            for i, video_path in enumerate(self.video_paths):
-                video_start_time = time.time()
-                # 初始化每个视频的总进度
-                video_progress = 0
-                # 计算当前视频在总数中的进度范围
-                # 每个视频占总进度的百分比
-                video_progress_range = 100.0 / total_videos
-                # 视频起始进度百分比
-                base_progress = (i / total_videos) * 100
-                
-                self.progress_updated.emit(
-                    int(base_progress), 
-                    f"处理视频 {i+1}/{total_videos}: {Path(video_path).name}"
-                )
-                
-                # 发送处理阶段信息
-                self.processing_stage_updated.emit(f"开始处理视频 {i+1}/{total_videos}", 0.0)
-                
-                logging.info(f"🎥 开始处理视频 {i+1}/{total_videos}: {Path(video_path).name}")
-                
-                output_path = Path(self.output_dir) / f"{Path(video_path).stem}_processed.mp4"
-                
-                try:
-                    with log_manager.capture_output():
-                        # 定义内部回调函数来更新视频处理进度
-                        def update_progress_callback(stage, progress_percent):
-                            # 计算当前视频的进度占总进度的比例
-                            current_video_progress = base_progress + (progress_percent / 100.0) * video_progress_range
-                            self.progress_updated.emit(int(current_video_progress), 
-                                                      f"处理视频 {i+1}/{total_videos}: {stage} ({progress_percent:.0f}%)")
-                            # 发送处理阶段信息
-                            self.processing_stage_updated.emit(stage, progress_percent)
-                        
-                        # 调用处理函数并传入回调
-                        result = process_video(
-                            video_path, 
-                            str(output_path),  # 确保路径是字符串
-                            self.style, 
-                            self.subtitle_lang, 
-                            self.quicktime_compatible,
-                            self.img_position_x, 
-                            self.img_position_y,  # 修复参数顺序
-                            self.font_size,
-                            self.subtitle_x,
-                            self.subtitle_y,
-                            self.bg_width,
-                            self.bg_height,
-                            self.img_size,
-                            self.subtitle_text_x,
-                            self.subtitle_text_y,
-                            self.random_position,
-                            self.enable_subtitle,
-                            self.enable_background,
-                            self.enable_image,
-                            self.enable_music,
-                            self.music_path,
-                            self.music_mode,
-                            self.music_volume,
-                            self.document_path,
-                            self.enable_gif,
-                            self.gif_path,
-                            self.gif_loop_count,
-                            self.gif_scale,
-                            self.gif_x,
-                            self.gif_y,
-                            self.scale_factor,
-                            self.image_path,
-                            self.subtitle_width,  # 添加字幕宽度参数
-                            quality_settings=self.quality_settings,  # 使用关键字参数传递质量设置
-                            progress_callback=update_progress_callback,  # 添加进度回调
-                            video_index=i  # 传递视频索引
-                        )
+            # 创建用于文件夹处理的临时目录
+            folder_temp_dir = Path(tempfile.mkdtemp())
+            print(f"创建文件夹处理临时目录: {folder_temp_dir}")
+            
+            try:
+                # 1. 处理文件夹中的视频
+                for i, folder_path in enumerate(self.folders):
+                    item_start_time = time.time()
                     
-                    video_end_time = time.time()
-                    video_duration = video_end_time - video_start_time
+                    # 计算进度
+                    current_index = i
+                    total_items = total_files
+                    base_progress = (current_index / total_items) * 100
                     
-                    if result:
-                        success_count += 1
-                        logging.info(f"✅ 视频处理成功: {Path(video_path).name} (耗时: {video_duration:.1f}秒)")
-                        print(f"✅ 视频处理成功: {Path(video_path).name} (耗时: {video_duration:.1f}秒)")
-                        
-                        # 更新整体进度，考虑到已完成的视频数量
-                        current_progress = int(((i + 1) / total_videos) * 100)
-                        self.progress_updated.emit(
-                            current_progress,
-                            f"已完成: {i+1}/{total_videos} - {Path(video_path).name} (耗时: {video_duration:.1f}秒)"
-                        )
-                    else:
-                        failed_videos.append(Path(video_path).name)
-                        logging.error(f"❌ 视频处理失败: {Path(video_path).name}")
-                        print(f"❌ 视频处理失败: {Path(video_path).name}")
-                        
-                        # 即使失败也更新进度
-                        current_progress = int(((i + 1) / total_videos) * 100)
-                        self.progress_updated.emit(
-                            current_progress,
-                            f"视频处理失败: {i+1}/{total_videos} - {Path(video_path).name}"
-                        )
-                except Exception as video_error:
-                    failed_videos.append(Path(video_path).name)
-                    logging.error(f"❌ 视频处理异常: {Path(video_path).name} - {str(video_error)}")
-                    print(f"❌ 视频处理异常: {Path(video_path).name} - {str(video_error)}")
-                    
-                    # 即使异常也更新进度
-                    current_progress = int(((i + 1) / total_videos) * 100)
                     self.progress_updated.emit(
-                        current_progress,
-                        f"处理异常: {i+1}/{total_videos} - {Path(video_path).name}"
+                        int(base_progress), 
+                        f"处理文件夹 {i+1}/{len(self.folders)}: {Path(folder_path).name}"
                     )
-            
-            # 计算总耗时
-            total_time = time.time() - start_time
-            avg_time = total_time / total_videos if total_videos > 0 else 0
-            
-            # 记录总结信息
-            logging.info(f"📊 批量处理完成: 成功 {success_count}/{total_videos}, 总耗时 {total_time:.1f}秒")
-            if failed_videos:
-                logging.warning(f"⚠️ 失败视频: {', '.join(failed_videos)}")
-            
-            # 准备详细统计信息
-            stats = {
-                'total_videos': total_videos,
-                'success_count': success_count,
-                'failed_count': len(failed_videos),
-                'total_time': total_time,
-                'avg_time': avg_time,
-                'failed_videos': failed_videos,
-                'output_dir': self.output_dir
-            }
-            
-            self.progress_updated.emit(100, f"完成! 成功处理 {success_count}/{total_videos} 个视频")
-            
-            if success_count > 0:
-                self.processing_complete.emit(True, stats)
-            else:
-                self.processing_complete.emit(False, stats)
+                    
+                    # 发送处理阶段信息
+                    self.processing_stage_updated.emit(f"开始处理文件夹 {i+1}/{len(self.folders)}", 0.0)
+                    
+                    logging.info(f"📁 开始处理文件夹 {i+1}/{len(self.folders)}: {Path(folder_path).name}")
+                    
+                    try:
+                        with log_manager.capture_output():
+                            # 处理文件夹中的视频，拼接成一个视频
+                            merged_video_path = process_folder_videos(folder_path, folder_temp_dir)
+                            
+                            if merged_video_path and Path(merged_video_path).exists():
+                                print(f"文件夹视频预处理完成: {merged_video_path}")
+                                # 获取预处理后视频的信息
+                                from utils import get_video_info
+                                merged_info = get_video_info(merged_video_path)
+                                if merged_info:
+                                    width, height, duration = merged_info
+                                    print(f"预处理后视频信息: 时长: {duration:.2f}秒, 分辨率: {width}x{height}")
+                                
+                                # 对预处理后的视频进行精处理（添加字幕、图片等）
+                                output_path = Path(self.output_dir) / f"{Path(folder_path).name}_processed.mp4"
+                                print(f"准备对预处理后的视频进行精处理...")
+                                print(f"输出路径: {output_path}")
+                                
+                                # 定义内部回调函数来更新视频处理进度
+                                def update_progress_callback(stage, progress_percent):
+                                    # 计算当前项目的进度占总进度的比例
+                                    current_item_progress = base_progress + (progress_percent / 100.0) * (100.0 / total_items)
+                                    self.progress_updated.emit(int(current_item_progress), 
+                                                              f"处理文件夹 {i+1}/{len(self.folders)}: {stage} ({progress_percent:.0f}%)")
+                                    # 发送处理阶段信息
+                                    self.processing_stage_updated.emit(stage, progress_percent)
+                                
+                                # 对预处理后的视频进行精处理
+                                print(f"调用process_video进行精处理")
+                                result = process_video(
+                                    merged_video_path, 
+                                    str(output_path),
+                                    self.style, 
+                                    self.subtitle_lang, 
+                                    self.quicktime_compatible,
+                                    self.img_position_x, 
+                                    self.img_position_y,
+                                    self.font_size,
+                                    self.subtitle_x,
+                                    self.subtitle_y,
+                                    self.bg_width,
+                                    self.bg_height,
+                                    self.img_size,
+                                    self.subtitle_text_x,
+                                    self.subtitle_text_y,
+                                    self.random_position,
+                                    self.enable_subtitle,
+                                    self.enable_background,
+                                    self.enable_image,
+                                    self.enable_music,
+                                    self.music_path,
+                                    self.music_mode,
+                                    self.music_volume,
+                                    self.document_path,
+                                    self.enable_gif,
+                                    self.gif_path,
+                                    self.gif_loop_count,
+                                    self.gif_scale,
+                                    self.gif_x,
+                                    self.gif_y,
+                                    self.scale_factor,
+                                    self.image_path,
+                                    self.subtitle_width,
+                                    quality_settings=self.quality_settings,
+                                    progress_callback=update_progress_callback,
+                                    video_index=i
+                                )
+                                
+                                item_end_time = time.time()
+                                item_duration = item_end_time - item_start_time
+                                print(f"文件夹视频精处理完成，耗时: {item_duration:.2f}秒")
+                                if result:
+                                    success_count += 1
+                                    logging.info(f"✅ 文件夹处理成功: {Path(folder_path).name} (耗时: {item_duration:.1f}秒)")
+                                    print(f"✅ 文件夹处理成功: {Path(folder_path).name} (耗时: {item_duration:.1f}秒)")
+                                    
+                                    # 更新整体进度
+                                    current_progress = int(((current_index + 1) / total_items) * 100)
+                                    self.progress_updated.emit(
+                                        current_progress,
+                                        f"已完成: {i+1}/{len(self.folders)} - {Path(folder_path).name} (耗时: {item_duration:.1f}秒)"
+                                    )
+                                else:
+                                    failed_items.append(f"📁 {Path(folder_path).name}")
+                                    logging.error(f"❌ 文件夹处理失败: {Path(folder_path).name}")
+                                    print(f"❌ 文件夹处理失败: {Path(folder_path).name}")
+                                    
+                                    # 即使失败也更新进度
+                                    current_progress = int(((current_index + 1) / total_items) * 100)
+                                    self.progress_updated.emit(
+                                        current_progress,
+                                        f"文件夹处理失败: {i+1}/{len(self.folders)} - {Path(folder_path).name}"
+                                    )
+                            else:
+                                failed_items.append(f"📁 {Path(folder_path).name}")
+                                logging.error(f"❌ 文件夹视频拼接失败: {Path(folder_path).name}")
+                                print(f"❌ 文件夹视频拼接失败: {Path(folder_path).name}")
+                                
+                                # 更新进度
+                                current_progress = int(((current_index + 1) / total_items) * 100)
+                                self.progress_updated.emit(
+                                    current_progress,
+                                    f"文件夹拼接失败: {i+1}/{len(self.folders)} - {Path(folder_path).name}"
+                                )
+                    except Exception as folder_error:
+                        failed_items.append(f"📁 {Path(folder_path).name}")
+                        logging.error(f"❌ 文件夹处理异常: {Path(folder_path).name} - {str(folder_error)}")
+                        print(f"❌ 文件夹处理异常: {Path(folder_path).name} - {str(folder_error)}")
+                        
+                        # 即使异常也更新进度
+                        current_progress = int(((current_index + 1) / total_items) * 100)
+                        self.progress_updated.emit(
+                            current_progress,
+                            f"文件夹处理异常: {i+1}/{len(self.folders)} - {Path(folder_path).name}"
+                        )
+                
+                # 2. 处理短视频 (< 9秒)
+                for i, video_path in enumerate(self.short_videos):
+                    item_start_time = time.time()
+                    
+                    # 计算进度（文件夹处理已完成的部分）
+                    folder_items = len(self.folders)
+                    current_index = folder_items + i
+                    total_items = total_files
+                    base_progress = (current_index / total_items) * 100
+                    
+                    self.progress_updated.emit(
+                        int(base_progress), 
+                        f"处理短视频 {i+1}/{len(self.short_videos)}: {Path(video_path).name}"
+                    )
+                    
+                    # 发送处理阶段信息
+                    self.processing_stage_updated.emit(f"开始处理短视频 {i+1}/{len(self.short_videos)}", 0.0)
+                    
+                    logging.info(f"⏱️ 开始处理短视频 {i+1}/{len(self.short_videos)}: {Path(video_path).name}")
+                    
+                    try:
+                        with log_manager.capture_output():
+                            # 对短视频进行预处理（水印处理+正放倒放）
+                            from video_core import preprocess_video_by_type
+                            import tempfile
+                            temp_dir = Path(tempfile.mkdtemp())
+                            try:
+                                preprocessed_path = preprocess_video_by_type(video_path, temp_dir)
+                                
+                                if preprocessed_path and Path(preprocessed_path).exists():
+                                    print(f"短视频预处理完成: {preprocessed_path}")
+                                    # 获取预处理后视频的信息
+                                    from utils import get_video_info
+                                    preprocessed_info = get_video_info(preprocessed_path)
+                                    if preprocessed_info:
+                                        width, height, duration = preprocessed_info
+                                        print(f"预处理后视频信息: 时长: {duration:.2f}秒, 分辨率: {width}x{height}")
+                                    
+                                    # 对预处理后的视频进行精处理
+                                    output_path = Path(self.output_dir) / f"{Path(video_path).stem}_processed.mp4"
+                                    print(f"准备对预处理后的短视频进行精处理...")
+                                    print(f"输出路径: {output_path}")
+                                    
+                                    # 定义内部回调函数来更新视频处理进度
+                                    def update_progress_callback(stage, progress_percent):
+                                        # 计算当前项目的进度占总进度的比例
+                                        current_item_progress = base_progress + (progress_percent / 100.0) * (100.0 / total_items)
+                                        self.progress_updated.emit(int(current_item_progress), 
+                                                                  f"处理短视频 {i+1}/{len(self.short_videos)}: {stage} ({progress_percent:.0f}%)")
+                                        # 发送处理阶段信息
+                                        self.processing_stage_updated.emit(stage, progress_percent)
+                                    
+                                    # 对预处理后的视频进行精处理
+                                    from video_core import process_video
+                                    print(f"调用process_video进行精处理")
+                                    result = process_video(
+                                        preprocessed_path, 
+                                        str(output_path),
+                                        self.style, 
+                                        self.subtitle_lang, 
+                                        self.quicktime_compatible,
+                                        self.img_position_x, 
+                                        self.img_position_y,
+                                        self.font_size,
+                                        self.subtitle_x,
+                                        self.subtitle_y,
+                                        self.bg_width,
+                                        self.bg_height,
+                                        self.img_size,
+                                        self.subtitle_text_x,
+                                        self.subtitle_text_y,
+                                        self.random_position,
+                                        self.enable_subtitle,
+                                        self.enable_background,
+                                        self.enable_image,
+                                        self.enable_music,
+                                        self.music_path,
+                                        self.music_mode,
+                                        self.music_volume,
+                                        self.document_path,
+                                        self.enable_gif,
+                                        self.gif_path,
+                                        self.gif_loop_count,
+                                        self.gif_scale,
+                                        self.gif_x,
+                                        self.gif_y,
+                                        self.scale_factor,
+                                        self.image_path,
+                                        self.subtitle_width,
+                                        quality_settings=self.quality_settings,
+                                        progress_callback=update_progress_callback,
+                                        video_index=current_index
+                                    )
+                                    
+                                    item_end_time = time.time()
+                                    item_duration = item_end_time - item_start_time
+                                    
+                                    if result:
+                                        success_count += 1
+                                        logging.info(f"✅ 短视频处理成功: {Path(video_path).name} (耗时: {item_duration:.1f}秒)")
+                                        print(f"✅ 短视频处理成功: {Path(video_path).name} (耗时: {item_duration:.1f}秒)")
+                                        
+                                        # 更新整体进度
+                                        current_progress = int(((current_index + 1) / total_items) * 100)
+                                        self.progress_updated.emit(
+                                            current_progress,
+                                            f"已完成: {i+1}/{len(self.short_videos)} - {Path(video_path).name} (耗时: {item_duration:.1f}秒)"
+                                        )
+                                    else:
+                                        failed_items.append(f"⏱️ {Path(video_path).name}")
+                                        logging.error(f"❌ 短视频处理失败: {Path(video_path).name}")
+                                        print(f"❌ 短视频处理失败: {Path(video_path).name}")
+                                        
+                                        # 即使失败也更新进度
+                                        current_progress = int(((current_index + 1) / total_items) * 100)
+                                        self.progress_updated.emit(
+                                            current_progress,
+                                            f"短视频处理失败: {i+1}/{len(self.short_videos)} - {Path(video_path).name}"
+                                        )
+                                else:
+                                    failed_items.append(f"⏱️ {Path(video_path).name}")
+                                    logging.error(f"❌ 短视频预处理失败: {Path(video_path).name}")
+                                    print(f"❌ 短视频预处理失败: {Path(video_path).name}")
+                                    
+                                    # 更新进度
+                                    current_progress = int(((current_index + 1) / total_items) * 100)
+                                    self.progress_updated.emit(
+                                        current_progress,
+                                        f"短视频预处理失败: {i+1}/{len(self.short_videos)} - {Path(video_path).name}"
+                                    )
+                            finally:
+                                # 清理临时目录
+                                try:
+                                    import shutil
+                                    shutil.rmtree(temp_dir)
+                                except Exception as e:
+                                    print(f"清理临时目录失败: {e}")
+                    except Exception as video_error:
+                        failed_items.append(f"⏱️ {Path(video_path).name}")
+                        logging.error(f"❌ 短视频处理异常: {Path(video_path).name} - {str(video_error)}")
+                        print(f"❌ 短视频处理异常: {Path(video_path).name} - {str(video_error)}")
+                        
+                        # 即使异常也更新进度
+                        current_progress = int(((current_index + 1) / total_items) * 100)
+                        self.progress_updated.emit(
+                            current_progress,
+                            f"短视频处理异常: {i+1}/{len(self.short_videos)} - {Path(video_path).name}"
+                        )
+                
+                # 3. 处理长视频 (>= 9秒)
+                for i, video_path in enumerate(self.long_videos):
+                    item_start_time = time.time()
+                    
+                    # 计算进度（文件夹和短视频处理已完成的部分）
+                    folder_items = len(self.folders)
+                    short_items = len(self.short_videos)
+                    current_index = folder_items + short_items + i
+                    total_items = total_files
+                    base_progress = (current_index / total_items) * 100
+                    
+                    self.progress_updated.emit(
+                        int(base_progress), 
+                        f"处理长视频 {i+1}/{len(self.long_videos)}: {Path(video_path).name}"
+                    )
+                    
+                    # 发送处理阶段信息
+                    self.processing_stage_updated.emit(f"开始处理长视频 {i+1}/{len(self.long_videos)}", 0.0)
+                    
+                    logging.info(f"🎬 开始处理长视频 {i+1}/{len(self.long_videos)}: {Path(video_path).name}")
+                    
+                    try:
+                        with log_manager.capture_output():
+                            # 对长视频进行预处理（仅水印处理）
+                            from video_core import preprocess_video_by_type
+                            import tempfile
+                            temp_dir = Path(tempfile.mkdtemp())
+                            try:
+                                preprocessed_path = preprocess_video_by_type(video_path, temp_dir)
+                                
+                                if preprocessed_path and Path(preprocessed_path).exists():
+                                    print(f"长视频预处理完成: {preprocessed_path}")
+                                    # 获取预处理后视频的信息
+                                    from utils import get_video_info
+                                    preprocessed_info = get_video_info(preprocessed_path)
+                                    if preprocessed_info:
+                                        width, height, duration = preprocessed_info
+                                        print(f"预处理后视频信息: 时长: {duration:.2f}秒, 分辨率: {width}x{height}")
+                                    
+                                    # 对预处理后的视频进行精处理
+                                    output_path = Path(self.output_dir) / f"{Path(video_path).stem}_processed.mp4"
+                                    print(f"准备对预处理后的长视频进行精处理...")
+                                    print(f"输出路径: {output_path}")
+                                    
+                                    # 定义内部回调函数来更新视频处理进度
+                                    def update_progress_callback(stage, progress_percent):
+                                        # 计算当前项目的进度占总进度的比例
+                                        current_item_progress = base_progress + (progress_percent / 100.0) * (100.0 / total_items)
+                                        self.progress_updated.emit(int(current_item_progress), 
+                                                                  f"处理长视频 {i+1}/{len(self.long_videos)}: {stage} ({progress_percent:.0f}%)")
+                                        # 发送处理阶段信息
+                                        self.processing_stage_updated.emit(stage, progress_percent)
+                                    
+                                    # 对预处理后的视频进行精处理
+                                    from video_core import process_video
+                                    print(f"调用process_video进行精处理")
+                                    result = process_video(
+                                        preprocessed_path, 
+                                        str(output_path),
+                                        self.style, 
+                                        self.subtitle_lang, 
+                                        self.quicktime_compatible,
+                                        self.img_position_x, 
+                                        self.img_position_y,
+                                        self.font_size,
+                                        self.subtitle_x,
+                                        self.subtitle_y,
+                                        self.bg_width,
+                                        self.bg_height,
+                                        self.img_size,
+                                        self.subtitle_text_x,
+                                        self.subtitle_text_y,
+                                        self.random_position,
+                                        self.enable_subtitle,
+                                        self.enable_background,
+                                        self.enable_image,
+                                        self.enable_music,
+                                        self.music_path,
+                                        self.music_mode,
+                                        self.music_volume,
+                                        self.document_path,
+                                        self.enable_gif,
+                                        self.gif_path,
+                                        self.gif_loop_count,
+                                        self.gif_scale,
+                                        self.gif_x,
+                                        self.gif_y,
+                                        self.scale_factor,
+                                        self.image_path,
+                                        self.subtitle_width,
+                                        quality_settings=self.quality_settings,
+                                        progress_callback=update_progress_callback,
+                                        video_index=current_index
+                                    )
+                                    
+                                    item_end_time = time.time()
+                                    item_duration = item_end_time - item_start_time
+                                    
+                                    if result:
+                                        success_count += 1
+                                        logging.info(f"✅ 长视频处理成功: {Path(video_path).name} (耗时: {item_duration:.1f}秒)")
+                                        print(f"✅ 长视频处理成功: {Path(video_path).name} (耗时: {item_duration:.1f}秒)")
+                                        
+                                        # 更新整体进度
+                                        current_progress = int(((current_index + 1) / total_items) * 100)
+                                        self.progress_updated.emit(
+                                            current_progress,
+                                            f"已完成: {i+1}/{len(self.long_videos)} - {Path(video_path).name} (耗时: {item_duration:.1f}秒)"
+                                        )
+                                    else:
+                                        failed_items.append(f"🎬 {Path(video_path).name}")
+                                        logging.error(f"❌ 长视频处理失败: {Path(video_path).name}")
+                                        print(f"❌ 长视频处理失败: {Path(video_path).name}")
+                                        
+                                        # 即使失败也更新进度
+                                        current_progress = int(((current_index + 1) / total_items) * 100)
+                                        self.progress_updated.emit(
+                                            current_progress,
+                                            f"长视频处理失败: {i+1}/{len(self.long_videos)} - {Path(video_path).name}"
+                                        )
+                                else:
+                                    failed_items.append(f"🎬 {Path(video_path).name}")
+                                    logging.error(f"❌ 长视频预处理失败: {Path(video_path).name}")
+                                    print(f"❌ 长视频预处理失败: {Path(video_path).name}")
+                                    
+                                    # 更新进度
+                                    current_progress = int(((current_index + 1) / total_items) * 100)
+                                    self.progress_updated.emit(
+                                        current_progress,
+                                        f"长视频预处理失败: {i+1}/{len(self.long_videos)} - {Path(video_path).name}"
+                                    )
+                            finally:
+                                # 清理临时目录
+                                try:
+                                    import shutil
+                                    shutil.rmtree(temp_dir)
+                                except Exception as e:
+                                    print(f"清理临时目录失败: {e}")
+                    except Exception as video_error:
+                        failed_items.append(f"🎬 {Path(video_path).name}")
+                        logging.error(f"❌ 长视频处理异常: {Path(video_path).name} - {str(video_error)}")
+                        print(f"❌ 长视频处理异常: {Path(video_path).name} - {str(video_error)}")
+                        
+                        # 即使异常也更新进度
+                        current_progress = int(((current_index + 1) / total_items) * 100)
+                        self.progress_updated.emit(
+                            current_progress,
+                            f"长视频处理异常: {i+1}/{len(self.long_videos)} - {Path(video_path).name}"
+                        )
+                
+                # 计算总耗时
+                total_time = time.time() - start_time
+                avg_time = total_time / total_files if total_files > 0 else 0
+                
+                # 记录总结信息
+                logging.info(f"📊 批量处理完成: 成功 {success_count}/{total_files}, 总耗时 {total_time:.1f}秒")
+                if failed_items:
+                    logging.warning(f"⚠️ 失败项目: {', '.join(failed_items)}")
+                
+                # 准备详细统计信息
+                stats = {
+                    'total_videos': total_files,
+                    'success_count': success_count,
+                    'failed_count': len(failed_items),
+                    'total_time': total_time,
+                    'avg_time': avg_time,
+                    'failed_videos': failed_items,
+                    'output_dir': self.output_dir
+                }
+                
+                self.progress_updated.emit(100, f"完成! 成功处理 {success_count}/{total_files} 个项目")
+                
+                if success_count > 0:
+                    self.processing_complete.emit(True, stats)
+                else:
+                    self.processing_complete.emit(False, stats)
+                    
+            finally:
+                # 清理文件夹处理的临时目录
+                try:
+                    import shutil
+                    shutil.rmtree(folder_temp_dir)
+                    print(f"清理文件夹处理临时目录: {folder_temp_dir}")
+                except Exception as e:
+                    print(f"清理临时目录失败: {e}")
                 
         except Exception as e:
             import traceback
             traceback.print_exc()
             
             # 准备错误统计信息
+            total_items = len(self.short_videos) + len(self.long_videos) + len(self.folders)
             error_stats = {
-                'total_videos': len(self.video_paths),
+                'total_videos': total_items,
                 'success_count': 0,
-                'failed_count': len(self.video_paths),
+                'failed_count': total_items,
                 'total_time': time.time() - start_time,
                 'avg_time': 0,
-                'failed_videos': [Path(p).name for p in self.video_paths],
+                'failed_videos': [f"⏱️ {Path(p).name}" for p in self.short_videos] + 
+                                [f"🎬 {Path(p).name}" for p in self.long_videos] + 
+                                [f"📁 {Path(p).name}" for p in self.folders],
                 'output_dir': self.output_dir,
                 'error': str(e)
             }
@@ -603,15 +955,23 @@ class VideoProcessorApp(QMainWindow):
         add_video_btn = QPushButton("添加视频文件")
         add_video_btn.setFixedHeight(26)
         add_video_btn.clicked.connect(self.add_video_files)
-        add_folder_btn = QPushButton("添加文件夹")
+        add_folder_btn = QPushButton("添加文件夹内视频")
         add_folder_btn.setFixedHeight(26)
         add_folder_btn.clicked.connect(self.add_video_folder)
+        add_folder_for_processing_btn = QPushButton("添加文件夹整体")
+        add_folder_for_processing_btn.setFixedHeight(26)
+        add_folder_for_processing_btn.clicked.connect(self.add_folder_for_processing)
+        add_mixed_folder_btn = QPushButton("添加混合文件夹")
+        add_mixed_folder_btn.setFixedHeight(26)
+        add_mixed_folder_btn.clicked.connect(self.add_mixed_folder)
         clear_btn = QPushButton("清空列表")
         clear_btn.setFixedHeight(26)
         clear_btn.clicked.connect(self.clear_video_list)
         
         video_btn_layout.addWidget(add_video_btn)
         video_btn_layout.addWidget(add_folder_btn)
+        video_btn_layout.addWidget(add_folder_for_processing_btn)
+        video_btn_layout.addWidget(add_mixed_folder_btn)
         video_btn_layout.addWidget(clear_btn)
         
         # 视频列表
@@ -1451,6 +1811,67 @@ class VideoProcessorApp(QMainWindow):
             if not self.output_dir.text() and file_paths:
                 self.output_dir.setText(self.default_output_dir)
     
+    def add_folder_for_processing(self):
+        """添加文件夹到处理列表（作为整体处理）"""
+        initial_dir = self.settings.value("last_video_dir", "")
+        folder_path = QFileDialog.getExistingDirectory(
+            self, "选择包含视频文件的文件夹（将作为整体处理）",
+            initial_dir
+        )
+        
+        if folder_path:
+            self.settings.setValue("last_video_dir", folder_path)
+            
+            # 添加文件夹路径到列表
+            if not self._is_file_in_list(folder_path):
+                self.video_list.addItem(folder_path)
+                print(f"添加文件夹到处理列表: {folder_path}")
+            
+            # 如果输出目录为空，设置默认输出目录
+            if not self.output_dir.text():
+                folder_path_obj = Path(folder_path)
+                default_output = folder_path_obj.parent / "output"
+                self.output_dir.setText(str(default_output))
+    
+    def add_mixed_folder(self):
+        """添加混合文件夹到处理列表（分别处理文件夹中的文件和子文件夹）"""
+        initial_dir = self.settings.value("last_video_dir", "")
+        folder_path = QFileDialog.getExistingDirectory(
+            self, "选择包含视频文件和子文件夹的文件夹（将分别处理）",
+            initial_dir
+        )
+        
+        if folder_path:
+            self.settings.setValue("last_video_dir", folder_path)
+            
+            # 查找文件夹中的所有项目（文件和子文件夹）
+            video_extensions = ['.mp4', '.mov', '.avi', '.wmv', '.mkv']
+            items_added = 0
+            
+            try:
+                folder_path_obj = Path(folder_path)
+                for item_path in folder_path_obj.iterdir():
+                    if item_path.is_file() and item_path.suffix.lower() in video_extensions:
+                        # 添加视频文件
+                        if not self._is_file_in_list(str(item_path)):
+                            self.video_list.addItem(str(item_path))
+                            items_added += 1
+                    elif item_path.is_dir():
+                        # 添加子文件夹
+                        if not self._is_file_in_list(str(item_path)):
+                            self.video_list.addItem(str(item_path))
+                            items_added += 1
+                
+                # 如果找到了项目并且输出目录为空，设置默认输出目录
+                if items_added > 0 and not self.output_dir.text():
+                    default_output = folder_path_obj / "output"
+                    self.output_dir.setText(str(default_output))
+                    
+                if items_added == 0:
+                    QMessageBox.information(self, "提示", "所选文件夹中没有找到视频文件或子文件夹")
+            except Exception as e:
+                QMessageBox.critical(self, "错误", f"读取文件夹失败: {str(e)}")
+    
     def add_video_folder(self):
         """添加文件夹中的所有视频文件到列表"""
         initial_dir = self.settings.value("last_video_dir", "")
@@ -1529,10 +1950,17 @@ class VideoProcessorApp(QMainWindow):
         
         # 获取所有视频的路径，添加检查确保项目存在
         video_paths = []
+        folder_paths = []
+        
         for i in range(video_count):
             item = self.video_list.item(i)
             if item is not None:
-                video_paths.append(item.text())
+                path = item.text()
+                # 检查路径是文件还是文件夹
+                if Path(path).is_file():
+                    video_paths.append(path)
+                elif Path(path).is_dir():
+                    folder_paths.append(path)
         
         output_dir = self.output_dir.text()
         if not output_dir:
@@ -1547,6 +1975,32 @@ class VideoProcessorApp(QMainWindow):
             QMessageBox.critical(self, "错误", f"无法创建输出目录: {str(e)}")
             return
             
+        # 分类处理文件：小于9秒、大于等于9秒、文件夹
+        short_videos = []    # 小于9秒的视频
+        long_videos = []     # 大于等于9秒的视频
+        folders = folder_paths  # 文件夹列表
+        
+        # 对视频文件按长度分类
+        for video_path in video_paths:
+            try:
+                from utils import get_video_info
+                video_info = get_video_info(video_path)
+                if video_info:
+                    _, _, duration = video_info
+                    if duration < 9.0:
+                        short_videos.append(video_path)
+                    else:
+                        long_videos.append(video_path)
+                else:
+                    # 如果无法获取视频信息，默认按长视频处理
+                    long_videos.append(video_path)
+            except Exception as e:
+                print(f"获取视频信息失败 {video_path}: {e}")
+                # 如果出错，默认按长视频处理
+                long_videos.append(video_path)
+        
+        print(f"分类结果: 短视频({len(short_videos)}个), 长视频({len(long_videos)}个), 文件夹({len(folders)}个)")
+        
         # 获取选择的样式和语言
         style_idx = self.style_combo.currentIndex()
         style = self.style_combo.itemData(style_idx)
@@ -1618,9 +2072,9 @@ class VideoProcessorApp(QMainWindow):
                 'pixfmt_value': self.pixfmt_combo.currentData()
             }
         
-        # 启动处理线程
+        # 启动处理线程，传递分类后的文件列表
         self.processing_thread = ProcessingThread(
-            video_paths, output_dir, style, lang, 
+            short_videos, long_videos, folders, output_dir, style, lang, 
             quicktime_compatible, img_position_x, img_position_y,
             font_size, subtitle_width, subtitle_x, subtitle_y, bg_width, bg_height, img_size,
             self.subtitle_text_x.value(), self.subtitle_text_y.value(),
