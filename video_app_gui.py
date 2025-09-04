@@ -56,7 +56,7 @@ class ProcessingThread(QThread):
                  subtitle_text_x, subtitle_text_y, random_position, enable_subtitle,
                  enable_background, enable_image, enable_music, music_path, music_mode, music_volume,
                  document_path=None, enable_gif=False, gif_path="", gif_loop_count=-1, 
-                 gif_scale=1.0, gif_x=800, gif_y=100, scale_factor=1.1, image_path=None, quality_settings=None,
+                 gif_scale=1.0, gif_rotation=0, gif_x=800, gif_y=100, scale_factor=1.1, image_path=None, quality_settings=None,
                  enable_tts=False, tts_voice="zh-CN-XiaoxiaoNeural", tts_volume=100, tts_text=""):  # 添加TTS参数
         super().__init__()
         # 分别存储不同类型的文件
@@ -91,6 +91,7 @@ class ProcessingThread(QThread):
         self.gif_path = gif_path
         self.gif_loop_count = gif_loop_count
         self.gif_scale = gif_scale
+        self.gif_rotation = gif_rotation
         self.gif_x = gif_x
         self.gif_y = gif_y
         self.scale_factor = scale_factor
@@ -349,8 +350,10 @@ class ProcessingThread(QThread):
                             print(f"使用用户输入的固定TTS文本: {current_tts_text}")
                         
                         # 对预处理后的视频进行精处理
+                        # 获取音乐模式的实际值
+                        music_mode_value = self.music_mode
                         print(f"调用process_video进行精处理，视频索引: {i}")
-                        print(f"音乐参数: enable_music={self.enable_music}, music_path={self.music_path}, music_mode={self.music_mode}, music_volume={self.music_volume}")
+                        print(f"音乐参数: enable_music={self.enable_music}, music_path={self.music_path}, music_mode={music_mode_value}, music_volume={self.music_volume}")
                         result = process_video(
                             preprocessed_path, 
                             str(output_path),
@@ -373,13 +376,14 @@ class ProcessingThread(QThread):
                             self.enable_image,
                             self.enable_music,
                             self.music_path,
-                            self.music_mode,
+                            music_mode_value,
                             self.music_volume,
                             self.user_document_path,
                             self.enable_gif,
                             self.gif_path,
                             self.gif_loop_count,
                             self.gif_scale,
+                            self.gif_rotation,
                             self.gif_x,
                             self.gif_y,
                             self.scale_factor,
@@ -501,7 +505,9 @@ class VideoProcessorApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("视频处理工具")
-        self.setGeometry(100, 100, 1200, 700)  # 增大窗口尺寸以更好地展示功能模块
+        self.setGeometry(100, 100, 1200, 850)  # 增大窗口高度以确保底部按钮和进度条完全显示
+        self.setMinimumSize(1000, 700)  # 设置最小窗口大小，确保界面元素不会被压缩
+        self.setMaximumSize(1600, 1200)  # 设置最大窗口大小，保持合理的界面比例
         
         # 设置窗口标题栏样式，无法在 macOS 上完全自定义，但可以调整
         if sys.platform == 'darwin':
@@ -509,6 +515,19 @@ class VideoProcessorApp(QMainWindow):
             self.setUnifiedTitleAndToolBarOnMac(True)  # 设置统一外观
         
         # 应用全局样式表以参考苹果系统的界面配色
+        # 根据不同操作系统设置不同的字体大小
+        font_size = "13px"
+        label_font_size = "13px"
+        groupbox_font_size = "13px"
+        button_font_size = "13px"
+        
+        if sys.platform == 'win32':
+            # Windows系统下增大字体
+            font_size = "14px"
+            label_font_size = "14px"
+            groupbox_font_size = "15px"
+            button_font_size = "14px"
+            
         self.setStyleSheet("""
             QMainWindow, QWidget {
                 background-color: #2c2c2c;
@@ -522,7 +541,7 @@ class VideoProcessorApp(QMainWindow):
                 border: 1px solid #555555;
                 background-color: #353535;
                 color: #ffffff;
-                font-size: 13px;
+                font-size: {groupbox_font_size};
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
@@ -534,7 +553,7 @@ class VideoProcessorApp(QMainWindow):
             }
             QLabel {
                 color: #ffffff;
-                font-size: 13px;
+                font-size: {label_font_size};
             }
             QListWidget {
                 border: 1px solid #555555;
@@ -563,7 +582,8 @@ class VideoProcessorApp(QMainWindow):
                 border-radius: 4px;
                 padding: 3px 8px;
                 color: #ffffff;
-                min-height: 25px;
+                min-height: 28px;
+                font-size: {button_font_size};
             }
             QPushButton:hover {
                 background-color: #1884ff;
@@ -596,8 +616,8 @@ class VideoProcessorApp(QMainWindow):
                 color: #ffffff;
                 selection-background-color: #0070f3;
                 selection-color: #ffffff;
-                font-size: 13px;
-                min-height: 24px;
+                font-size: {font_size};
+                min-height: 26px;
             }
             QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
                 border: 1px solid #0070f3;
@@ -655,8 +675,8 @@ class VideoProcessorApp(QMainWindow):
                 padding: 4px 28px 4px 8px;
                 background-color: #2c2c2c;
                 color: #ffffff;
-                min-height: 24px;
-                font-size: 13px;
+                min-height: 26px;
+                font-size: {font_size};
             }
             QComboBox:focus {
                 border: 1px solid #0070f3;
@@ -774,8 +794,8 @@ class VideoProcessorApp(QMainWindow):
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
         self.main_layout.setSpacing(8)
-        # 增加底部边距以确保进度条完全可见
-        self.main_layout.setContentsMargins(10, 10, 10, 30)
+        # 增加底部边距以确保进度条完全可见，避免被任务栏遮挡
+        self.main_layout.setContentsMargins(10, 10, 10, 50)
         
         # 创建标签页控件
         self.tabs = QTabWidget()
@@ -792,13 +812,19 @@ class VideoProcessorApp(QMainWindow):
         # 状态栏和进度条
         self.status_bar = self.statusBar()
         if self.status_bar is not None:
+            self.status_bar.setMinimumHeight(30)  # 增加状态栏最小高度
             self.progress_bar = QProgressBar()
             self.progress_bar.setRange(0, 100)
             self.progress_bar.setTextVisible(True)
-            # 增加进度条高度以提高可见性
-            self.progress_bar.setMaximumHeight(25)
-            self.status_bar.addPermanentWidget(self.progress_bar)
+            # 增加进度条高度和宽度以提高可见性
+            self.progress_bar.setMinimumHeight(25)
+            self.progress_bar.setMinimumWidth(300)
+            self.status_bar.addPermanentWidget(self.progress_bar, 1)  # 设置拉伸因子为1，使进度条占据更多空间
             self.status_bar.showMessage("准备就绪")
+            # 设置状态栏样式
+            self.status_bar.setStyleSheet("QStatusBar {border-top: 1px solid #555555; padding: 3px; background-color: #353535;}")
+            self.progress_bar.setStyleSheet("QProgressBar {border: 1px solid #555555; border-radius: 4px; text-align: center;} QProgressBar::chunk {background-color: #3498db;}")
+
         
         # 添加标签页到主布局
         self.main_layout.addWidget(self.tabs)
@@ -816,13 +842,13 @@ class VideoProcessorApp(QMainWindow):
         # 左侧：视频选择和基本设置
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
-        left_layout.setSpacing(12)
-        left_layout.setContentsMargins(5, 5, 5, 5)
+        left_layout.setSpacing(15)
+        left_layout.setContentsMargins(8, 8, 8, 8)
         
         # 视频选择组
         video_group = QGroupBox("视频选择")
-        video_group.setMinimumHeight(160)
-        video_group.setMaximumHeight(180)
+        video_group.setMinimumHeight(180)
+        video_group.setMaximumHeight(200)
         video_layout = QVBoxLayout()
         video_layout.setSpacing(6)
         video_layout.setContentsMargins(8, 8, 8, 8)
@@ -855,8 +881,8 @@ class VideoProcessorApp(QMainWindow):
         # 视频列表
         self.video_list = QListWidget()
         self.video_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.video_list.setMinimumHeight(100)
-        self.video_list.setMaximumHeight(120)
+        self.video_list.setMinimumHeight(680)  # 调整高度与右侧两列对齐
+        self.video_list.setMaximumHeight(800)  # 设置最大高度
         # 设置列表行高以显示完整路径
         self.video_list.setStyleSheet("QListWidget::item { height: 22px; }")
         
@@ -871,8 +897,8 @@ class VideoProcessorApp(QMainWindow):
         
         # 文档选择组
         document_group = QGroupBox("文档选择")
-        document_group.setMinimumHeight(100)
-        document_group.setMaximumHeight(120)
+        document_group.setMinimumHeight(110)
+        document_group.setMaximumHeight(130)
         document_layout = QVBoxLayout()
         document_layout.setSpacing(6)
         document_layout.setContentsMargins(8, 8, 8, 8)
@@ -907,8 +933,8 @@ class VideoProcessorApp(QMainWindow):
         
         # 图片路径选择组
         image_group = QGroupBox("图片路径")
-        image_group.setMinimumHeight(100)
-        image_group.setMaximumHeight(120)
+        image_group.setMinimumHeight(110)
+        image_group.setMaximumHeight(130)
         image_layout = QVBoxLayout()
         image_layout.setSpacing(6)
         image_layout.setContentsMargins(8, 8, 8, 8)
@@ -943,8 +969,8 @@ class VideoProcessorApp(QMainWindow):
         
         # 输出设置组
         output_group = QGroupBox("输出设置")
-        output_group.setMinimumHeight(80)
-        output_group.setMaximumHeight(100)
+        output_group.setMinimumHeight(90)
+        output_group.setMaximumHeight(110)
         output_layout = QGridLayout()
         output_layout.setSpacing(6)
         output_layout.setContentsMargins(8, 8, 8, 8)
@@ -1259,14 +1285,11 @@ class VideoProcessorApp(QMainWindow):
         gif_layout.addWidget(self.gif_path, 1, 1)
         gif_layout.addWidget(gif_browse_btn, 1, 2)
         
-        # GIF循环次数
+        # GIF循环次数（保留功能但不显示UI控件）
         self.gif_loop_count = QSpinBox()
         self.gif_loop_count.setRange(-1, 999)  # -1表示无限循环
         self.gif_loop_count.setValue(-1)
-        self.gif_loop_count.setToolTip("-1表示无限循环，0表示不循环，大于0表示具体循环次数")
-        
-        gif_layout.addWidget(QLabel("循环次数:"), 2, 0)
-        gif_layout.addWidget(self.gif_loop_count, 2, 1)
+        self.gif_loop_count.setVisible(False)  # 隐藏UI控件
         
         # GIF缩放系数
         self.gif_scale = QDoubleSpinBox()
@@ -1279,6 +1302,16 @@ class VideoProcessorApp(QMainWindow):
         gif_layout.addWidget(QLabel("缩放系数:"), 3, 0)
         gif_layout.addWidget(self.gif_scale, 3, 1)
         
+        # GIF旋转角度
+        self.gif_rotation = QSpinBox()
+        self.gif_rotation.setRange(0, 359)
+        self.gif_rotation.setValue(0)
+        self.gif_rotation.setSuffix("°")
+        self.gif_rotation.setToolTip("设置GIF的旋转角度，0-359度")
+        
+        gif_layout.addWidget(QLabel("旋转角度:"), 4, 0)
+        gif_layout.addWidget(self.gif_rotation, 4, 1)
+        
         # GIF位置设置
         self.gif_x = QSpinBox()
         self.gif_x.setRange(-2000, 2000)
@@ -1290,10 +1323,10 @@ class VideoProcessorApp(QMainWindow):
         self.gif_y.setValue(100)
         self.gif_y.setToolTip("GIF左上角Y坐标")
         
-        gif_layout.addWidget(QLabel("X坐标:"), 4, 0)
-        gif_layout.addWidget(self.gif_x, 4, 1)
-        gif_layout.addWidget(QLabel("Y坐标:"), 5, 0)
-        gif_layout.addWidget(self.gif_y, 5, 1)
+        gif_layout.addWidget(QLabel("X坐标:"), 5, 0)
+        gif_layout.addWidget(self.gif_x, 5, 1)
+        gif_layout.addWidget(QLabel("Y坐标:"), 6, 0)
+        gif_layout.addWidget(self.gif_y, 6, 1)
         
         gif_group.setLayout(gif_layout)
         
@@ -1353,9 +1386,20 @@ class VideoProcessorApp(QMainWindow):
         main_layout.addWidget(splitter)
         
         # 操作按钮
+        # 创建底部按钮区域容器
+        bottom_container = QWidget()
+        bottom_layout = QHBoxLayout(bottom_container)
+        bottom_layout.setContentsMargins(10, 10, 10, 10)
+        
+        # 添加说明标签
+        process_label = QLabel("准备好所有设置后，点击下方按钮开始处理视频:")
+        process_label.setStyleSheet("font-weight: bold; color: #3498db;")
+        
+        # 处理按钮
         process_btn = QPushButton("处理所有视频")
         process_btn.setObjectName("primaryButton")
-        process_btn.setMinimumHeight(32)
+        process_btn.setMinimumHeight(40)  # 增加按钮高度
+        process_btn.setMinimumWidth(1100)  # 调整宽度与三列板块总宽相等
         process_btn.setStyleSheet("""
             QPushButton#primaryButton {
                 background-color: #0070f3;
@@ -1375,7 +1419,14 @@ class VideoProcessorApp(QMainWindow):
         """)
         process_btn.clicked.connect(self.process_videos)
         
-        main_layout.addWidget(process_btn)
+        # 将按钮添加到底部布局
+        bottom_layout.addWidget(process_label)
+        bottom_layout.addStretch(1)  # 添加弹性空间
+        bottom_layout.addWidget(process_btn)
+        bottom_layout.addStretch(1)  # 添加弹性空间
+        
+        # 将底部容器添加到主布局
+        main_layout.addWidget(bottom_container)
     
     def init_settings_tab(self):
         """初始化设置标签页"""
@@ -1456,8 +1507,8 @@ class VideoProcessorApp(QMainWindow):
         self.populate_voice_languages()  # 填充语言选项
         self.voice_language_combo.currentTextChanged.connect(self.on_voice_language_changed)  # 添加语言变化事件
         
-        voice_layout.addWidget(QLabel("语言:"), 1, 0)
-        voice_layout.addWidget(self.voice_language_combo, 1, 1)
+        voice_layout.addWidget(QLabel("语言:"), 0, 2)
+        voice_layout.addWidget(self.voice_language_combo, 0, 3)
         
         # API Key输入
         self.api_key_input = QLineEdit()
@@ -1468,39 +1519,39 @@ class VideoProcessorApp(QMainWindow):
         api_test_btn.clicked.connect(self.test_api_connection)
         api_test_btn.setMaximumWidth(100)  # 限制按钮宽度
         
-        voice_layout.addWidget(QLabel("API Key:"), 2, 0)
-        voice_layout.addWidget(self.api_key_input, 2, 1)
-        voice_layout.addWidget(api_test_btn, 2, 2)
+        voice_layout.addWidget(QLabel("API Key:"), 1, 0)
+        voice_layout.addWidget(self.api_key_input, 1, 1)
+        voice_layout.addWidget(api_test_btn, 1, 2)
         
         # 音色选择
         self.voice_type_combo = QComboBox()
         self.populate_voice_types()  # 填充音色选项
         
-        voice_layout.addWidget(QLabel("音色:"), 3, 0)
-        voice_layout.addWidget(self.voice_type_combo, 3, 1)
+        voice_layout.addWidget(QLabel("音色:"), 1, 3)
+        voice_layout.addWidget(self.voice_type_combo, 2, 0)
         
         # 性别选择
         self.voice_gender_combo = QComboBox()
         self.voice_gender_combo.addItem("男声", "male")
         self.voice_gender_combo.addItem("女声", "female")
         
-        voice_layout.addWidget(QLabel("性别:"), 4, 0)
-        voice_layout.addWidget(self.voice_gender_combo, 4, 1)
+        voice_layout.addWidget(QLabel("性别:"), 2, 1)
+        voice_layout.addWidget(self.voice_gender_combo, 2, 2)
         
         # 自动匹配视频时长
         self.auto_match_duration = QCheckBox("自动匹配视频时长")
         self.auto_match_duration.setChecked(True)
         self.auto_match_duration.setToolTip("勾选后会通过调节播放速度使音频时长与视频一致")
         
-        voice_layout.addWidget(self.auto_match_duration, 5, 0, 1, 2)
+        voice_layout.addWidget(self.auto_match_duration, 2, 3)
         
         # TTS文本输入
         self.tts_text_input = QTextEdit()
         self.tts_text_input.setMaximumHeight(60)
         self.tts_text_input.setPlaceholderText("输入要转换为语音的文本内容")
         
-        voice_layout.addWidget(QLabel("TTS文本:"), 6, 0)
-        voice_layout.addWidget(self.tts_text_input, 6, 1, 1, 2)
+        voice_layout.addWidget(QLabel("TTS文本:"), 3, 0)
+        voice_layout.addWidget(self.tts_text_input, 3, 1, 1, 3)
         
         # TTS音量控制
         tts_volume_layout = QHBoxLayout()
@@ -1515,8 +1566,8 @@ class VideoProcessorApp(QMainWindow):
         tts_volume_layout.addWidget(self.tts_volume_slider)
         tts_volume_layout.addWidget(self.tts_volume_label)
         
-        voice_layout.addWidget(QLabel("TTS音量:"), 7, 0)
-        voice_layout.addLayout(tts_volume_layout, 7, 1, 1, 2)
+        voice_layout.addWidget(QLabel("TTS音量:"), 4, 0)
+        voice_layout.addLayout(tts_volume_layout, 4, 1, 1, 3)
         
         voice_group.setLayout(voice_layout)
         
@@ -1546,8 +1597,8 @@ class VideoProcessorApp(QMainWindow):
         self.preset_combo.setCurrentIndex(4)  # 默认选择slow
         self.preset_combo.setToolTip("编码预设，影响编码速度和文件大小。TikTok推荐slow获得更好的质量")
         
-        quality_layout.addWidget(QLabel("编码预设:"), 1, 0)
-        quality_layout.addWidget(self.preset_combo, 1, 1)
+        quality_layout.addWidget(QLabel("编码预设:"), 0, 2)
+        quality_layout.addWidget(self.preset_combo, 0, 3)
         
         # Profile设置
         self.profile_combo = QComboBox()
@@ -1557,8 +1608,8 @@ class VideoProcessorApp(QMainWindow):
         self.profile_combo.setCurrentIndex(2)  # 默认选择high
         self.profile_combo.setToolTip("H.264 Profile设置，High提供最佳质量和压缩效率")
         
-        quality_layout.addWidget(QLabel("H.264 Profile:"), 2, 0)
-        quality_layout.addWidget(self.profile_combo, 2, 1)
+        quality_layout.addWidget(QLabel("H.264 Profile:"), 1, 0)
+        quality_layout.addWidget(self.profile_combo, 1, 1)
         
         # Level设置
         self.level_combo = QComboBox()
@@ -1569,8 +1620,8 @@ class VideoProcessorApp(QMainWindow):
         self.level_combo.setCurrentIndex(2)  # 默认选择 4.1
         self.level_combo.setToolTip("H.264 Level设置，4.1支持高清竖屏视频")
         
-        quality_layout.addWidget(QLabel("H.264 Level:"), 3, 0)
-        quality_layout.addWidget(self.level_combo, 3, 1)
+        quality_layout.addWidget(QLabel("H.264 Level:"), 1, 2)
+        quality_layout.addWidget(self.level_combo, 1, 3)
         
         # 最大码率设置
         self.maxrate_spin = QSpinBox()
@@ -1579,8 +1630,8 @@ class VideoProcessorApp(QMainWindow):
         self.maxrate_spin.setSuffix(" kbps")
         self.maxrate_spin.setToolTip("最大码率限制，TikTok推荐 6000-8000 kbps")
         
-        quality_layout.addWidget(QLabel("最大码率:"), 4, 0)
-        quality_layout.addWidget(self.maxrate_spin, 4, 1)
+        quality_layout.addWidget(QLabel("最大码率:"), 2, 0)
+        quality_layout.addWidget(self.maxrate_spin, 2, 1)
         
         # 缓冲区大小
         self.bufsize_spin = QSpinBox()
@@ -1589,8 +1640,8 @@ class VideoProcessorApp(QMainWindow):
         self.bufsize_spin.setSuffix(" kbps")
         self.bufsize_spin.setToolTip("缓冲区大小，通常设为最大码率的2倍")
         
-        quality_layout.addWidget(QLabel("缓冲区大小:"), 5, 0)
-        quality_layout.addWidget(self.bufsize_spin, 5, 1)
+        quality_layout.addWidget(QLabel("缓冲区大小:"), 2, 2)
+        quality_layout.addWidget(self.bufsize_spin, 2, 3)
         
         # GOP大小 (关键帧间隔)
         self.gop_spin = QSpinBox()
@@ -1598,8 +1649,8 @@ class VideoProcessorApp(QMainWindow):
         self.gop_spin.setValue(30)
         self.gop_spin.setToolTip("GOP大小(关键帧间隔)，30表示每30帧一个关键帧")
         
-        quality_layout.addWidget(QLabel("GOP大小:"), 6, 0)
-        quality_layout.addWidget(self.gop_spin, 6, 1)
+        quality_layout.addWidget(QLabel("GOP大小:"), 3, 0)
+        quality_layout.addWidget(self.gop_spin, 3, 1)
         
         # Tune设置
         self.tune_combo = QComboBox()
@@ -1611,8 +1662,8 @@ class VideoProcessorApp(QMainWindow):
         self.tune_combo.setCurrentIndex(1)  # 默认选择film
         self.tune_combo.setToolTip("针对不同内容类型的优化设置")
         
-        quality_layout.addWidget(QLabel("内容优化:"), 7, 0)
-        quality_layout.addWidget(self.tune_combo, 7, 1)
+        quality_layout.addWidget(QLabel("内容优化:"), 3, 2)
+        quality_layout.addWidget(self.tune_combo, 3, 3)
         
         # 像素格式
         self.pixfmt_combo = QComboBox()
@@ -1622,8 +1673,8 @@ class VideoProcessorApp(QMainWindow):
         self.pixfmt_combo.setCurrentIndex(0)  # 默认yuv420p
         self.pixfmt_combo.setToolTip("像素格式，yuv420p兼容性最佳")
         
-        quality_layout.addWidget(QLabel("像素格式:"), 8, 0)
-        quality_layout.addWidget(self.pixfmt_combo, 8, 1)
+        quality_layout.addWidget(QLabel("像素格式:"), 4, 0)
+        quality_layout.addWidget(self.pixfmt_combo, 4, 1)
         
         quality_group.setLayout(quality_layout)
         
@@ -2014,7 +2065,7 @@ class VideoProcessorApp(QMainWindow):
             self.subtitle_text_x.value(), self.subtitle_text_y.value(),
             random_position, enable_subtitle, enable_background, enable_image,
             enable_music, music_path, music_mode, music_volume,
-            document_path, enable_gif, gif_path, gif_loop_count, gif_scale, gif_x, gif_y, scale_factor, image_path,
+            document_path, enable_gif, gif_path, gif_loop_count, gif_scale, self.gif_rotation.value(), gif_x, gif_y, scale_factor, image_path,
             quality_settings,  # 添加质量设置参数
             enable_tts, tts_voice, tts_volume, tts_text  # 添加TTS参数
         )
@@ -2842,7 +2893,21 @@ class VideoProcessorApp(QMainWindow):
 
 
 if __name__ == "__main__":
+    # 启用高DPI缩放
+    if hasattr(Qt, 'AA_EnableHighDpiScaling'):
+        QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    if hasattr(Qt, 'AA_UseHighDpiPixmaps'):
+        QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    
     app = QApplication(sys.argv)
+    
+    # 设置全局字体大小
+    font = app.font()
+    if sys.platform == 'win32':
+        # Windows系统下增大字体
+        font.setPointSize(10)  # 默认字体大小
+    app.setFont(font)
+    
     window = VideoProcessorApp()
     window.show()
     sys.exit(app.exec_())

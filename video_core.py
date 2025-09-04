@@ -105,7 +105,7 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
                  subtitle_text_x=0, subtitle_text_y=1190, random_position=False, enable_subtitle=True,
                  enable_background=True, enable_image=True, enable_music=False, music_path="",
                  music_mode="single", music_volume=50, document_path=None, enable_gif=False, 
-                 gif_path="", gif_loop_count=-1, gif_scale=1.0, gif_x=800, gif_y=100, scale_factor=1.1, 
+                 gif_path="", gif_loop_count=-1, gif_scale=1.0, gif_rotation=0, gif_x=800, gif_y=100, scale_factor=1.1, 
                  image_path=None, subtitle_width=800, quality_settings=None, progress_callback=None,
                  video_index=0, enable_tts=False, tts_voice="zh-CN-XiaoxiaoNeural", 
                  tts_volume=100, tts_text=""):  # 添加TTS相关参数
@@ -216,6 +216,7 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
             gif_path=gif_path,
             gif_loop_count=gif_loop_count,
             gif_scale=gif_scale,
+            gif_rotation=gif_rotation,
             gif_x=gif_x,
             gif_y=gif_y,
             scale_factor=scale_factor,
@@ -260,6 +261,15 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
         print(f"处理视频时出错: {e}")
         import traceback
         traceback.print_exc()
+        
+        # 记录详细的错误信息
+        error_msg = f"视频处理失败 - 文件: {video_path}, 错误: {str(e)}"
+        print(error_msg)
+        
+        # 如果有进度回调，报告错误
+        if progress_callback:
+            progress_callback(f"处理失败: {str(e)}", 0.0)
+        
         return None
     finally:
         # 清理临时文件
@@ -512,7 +522,7 @@ def preprocess_video_without_reverse(video_path, temp_dir, duration=None):
     return processed_path
 
 
-def process_animated_gif_for_video(gif_path, temp_dir, scale_factor=1.0, loop_count=-1, video_duration=None):
+def process_animated_gif_for_video(gif_path, temp_dir, scale_factor=1.0, loop_count=-1, video_duration=None, gif_rotation=0):
     """
     为视频处理专门优化的动画GIF处理函数
     
@@ -522,6 +532,7 @@ def process_animated_gif_for_video(gif_path, temp_dir, scale_factor=1.0, loop_co
         scale_factor: 缩放因子
         loop_count: 循环次数 (-1表示无限循环)
         video_duration: 视频时长（秒），用于确保GIF持续整个视频时长
+        gif_rotation: 旋转角度（度），0-359度
         
     返回:
         处理后的GIF文件路径，失败返回None
@@ -571,10 +582,20 @@ def process_animated_gif_for_video(gif_path, temp_dir, scale_factor=1.0, loop_co
         if video_duration is not None:
             gif_cmd.extend(['-t', str(video_duration)])
         
-        # 添加缩放过滤器（如果需要）
+        # 添加缩放和旋转过滤器（如果需要）
         filters = []
         if scale_factor != 1.0:
             filters.append(f"scale=iw*{scale_factor}:ih*{scale_factor}")
+        
+        # 添加旋转过滤器（总是添加以确保正确方向）
+        # FFmpeg的rotate滤镜是逆时针旋转，需要取负值来实现顺时针旋转
+        # 将角度转换为弧度，并取负值
+        # 对于0度，我们需要添加一个基础旋转来纠正原始GIF的方向
+        base_rotation = -45  # 基础旋转角度，用于纠正原始GIF指向右上角的问题
+        actual_rotation = base_rotation + gif_rotation
+        rotation_radians = -actual_rotation * 3.14159265359 / 180
+        filters.append(f"rotate={rotation_radians}:fillcolor=none:bilinear=0")
+        print(f"【GIF旋转】应用旋转角度: {actual_rotation}度 (基础: {base_rotation}度 + 用户设置: {gif_rotation}度)")
         
         # 添加GIF处理过滤器，保持动画
         if filters:
@@ -697,6 +718,25 @@ def generate_subtitle_tts(subtitle_text, voice, output_path):
         bool: 是否成功生成音频
     """
     try:
+        # 检测文本语言并选择合适的语音
+        is_chinese = any('\u4e00' <= char <= '\u9fff' for char in subtitle_text)
+        is_thai = any('\u0e00' <= char <= '\u0e7f' for char in subtitle_text)
+        is_malay = not (is_chinese or is_thai)  # 简单判断，如果不是中文或泰文，则假设为马来文
+        
+        # 根据文本语言选择合适的语音
+        selected_voice = voice  # 默认使用传入的语音
+        if is_chinese and not voice.startswith('zh-'):
+            selected_voice = "zh-CN-XiaoxiaoNeural"  # 中文默认使用小晓
+            print(f"检测到中文文本，自动切换为中文语音: {selected_voice}")
+        elif is_thai and not voice.startswith('th-'):
+            selected_voice = "th-TH-PremwadeeNeural"  # 泰文默认使用Premwadee
+            print(f"检测到泰文文本，自动切换为泰文语音: {selected_voice}")
+        elif is_malay and not voice.startswith('ms-'):
+            selected_voice = "ms-MY-YasminNeural"  # 马来文默认使用Yasmin
+            print(f"检测到马来文文本，自动切换为马来文语音: {selected_voice}")
+        
+        print(f"使用语音: {selected_voice} 生成TTS音频")
+        
         # 使用异步方式生成TTS音频
         # 检查是否已经在事件循环中
         try:
@@ -711,7 +751,7 @@ def generate_subtitle_tts(subtitle_text, voice, output_path):
                 nonlocal result, exception
                 try:
                     # 在新线程中运行asyncio.run()
-                    result = asyncio.run(generate_tts_audio(subtitle_text, voice, output_path))
+                    result = asyncio.run(generate_tts_audio(subtitle_text, selected_voice, output_path))
                 except Exception as e:
                     exception = e
             
@@ -724,7 +764,7 @@ def generate_subtitle_tts(subtitle_text, voice, output_path):
                 
         except RuntimeError:
             # 如果没有运行中的事件循环，使用asyncio.run()
-            result = asyncio.run(generate_tts_audio(subtitle_text, voice, output_path))
+            result = asyncio.run(generate_tts_audio(subtitle_text, selected_voice, output_path))
         return result
     except Exception as e:
         print(f"生成字幕TTS音频失败: {e}")
@@ -741,7 +781,7 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                         subtitle_text_x=0, subtitle_text_y=1190, random_position=False, enable_subtitle=True,
                         enable_background=True, enable_image=True, enable_music=False, music_path="",
                         music_mode="single", music_volume=50, document_path=None, enable_gif=False, 
-                        gif_path="", gif_loop_count=-1, gif_scale=1.0, gif_x=800, gif_y=100, scale_factor=1.1, 
+                        gif_path="", gif_loop_count=-1, gif_scale=1.0, gif_rotation=0, gif_x=800, gif_y=100, scale_factor=1.1, 
                         image_path=None, subtitle_width=800, quality_settings=None, progress_callback=None,
                         video_index=0):  # 添加视频索引参数
     """
@@ -1031,6 +1071,9 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
         processed_img_path = None  # 初始化processed_img_path变量
         
         print(f"🎬 【素材状态调试】图片功能启用状态: {enable_image}")
+        print(f"🎬 【素材状态调试】用户指定图片路径: {image_path}")
+        print(f"🎬 【素材状态调试】原始视频路径: {original_video_path}")
+        print(f"🎬 【素材状态调试】当前视频路径: {video_path}")
         
         if enable_image:
             print("📁 图片功能已启用，开始查找匹配图片...")
@@ -1039,19 +1082,30 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             if original_video_path:
                 original_video_name = Path(original_video_path).stem
                 print(f"📁 使用原始视频名查找图片: {original_video_name}")
+                print(f"📁 调用find_matching_image参数: video_name={original_video_name}, custom_image_path={image_path}")
                 matched_image_path = find_matching_image(original_video_name, custom_image_path=image_path)
+                print(f"📁 find_matching_image返回结果: {matched_image_path}")
                 
             # 如果没有找到，使用当前视频路径
             if not matched_image_path:
                 video_name = Path(video_path).stem
                 print(f"📁 使用当前视频名查找图片: {video_name}")
+                print(f"📁 调用find_matching_image参数: video_name={video_name}, custom_image_path={image_path}")
                 matched_image_path = find_matching_image(video_name, custom_image_path=image_path)
+                print(f"📁 find_matching_image返回结果: {matched_image_path}")
                 
             # 使用匹配的图片路径
             final_image_path = matched_image_path
+            print(f"📁 最终图片路径: {final_image_path}")
             
             if final_image_path:
                 print(f"✅ 找到匹配的图片: {final_image_path}")
+                # 验证图片文件是否真实存在
+                if Path(final_image_path).exists():
+                    print(f"✅ 图片文件确实存在: {final_image_path}")
+                else:
+                    print(f"❌ 图片文件不存在: {final_image_path}")
+                    final_image_path = None
             else:
                 print("⚠️ 没有找到匹配的图片")
         else:
@@ -1060,19 +1114,31 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
         if final_image_path and enable_image:
             print(f"✅ 找到匹配的图片: {final_image_path}")
             # 6. 处理图片
-            print(f"【图片流程】处理图片 {final_image_path}，大小设置为 {img_size}x{img_size}")
+            print(f"【图片流程】开始处理图片 {final_image_path}，大小设置为 {img_size}x{img_size}")
             processed_img_path = temp_dir / "processed_image.png"
+            print(f"【图片流程】临时处理图片路径: {processed_img_path}")
+            
+            # 调用图片处理函数
+            print(f"【图片流程】调用process_image_for_overlay参数: input={final_image_path}, output={processed_img_path}, size=({img_size}, {img_size})")
             processed_img = process_image_for_overlay(
                 final_image_path,
                 str(processed_img_path),
                 size=(img_size, img_size)  # 使用传入的img_size参数
             )
+            print(f"【图片流程】process_image_for_overlay返回结果: {processed_img}")
             
             if not processed_img:
                 print("❌ 处理图片失败，跳过图片叠加")
                 has_image = False
             else:
                 print(f"✅ 【图片流程】图片处理成功: {processed_img}")
+                # 验证处理后的图片文件是否存在
+                if Path(processed_img).exists():
+                    print(f"✅ 处理后的图片文件确实存在: {processed_img}")
+                    file_size = Path(processed_img).stat().st_size
+                    print(f"✅ 处理后的图片文件大小: {file_size} 字节")
+                else:
+                    print(f"❌ 处理后的图片文件不存在: {processed_img}")
                 has_image = True
         elif enable_image and not final_image_path:
             print("⚠️ 图片功能已启用但没有找到匹配的图片")
@@ -1081,6 +1147,9 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             # 检查图片目录是否存在
             image_dir = get_data_path("input/images")
             image_dir_path = Path(image_dir)
+            print(f"📁 【图片目录调试】默认图片目录路径: {image_dir}")
+            print(f"📁 【图片目录调试】图片目录是否存在: {image_dir_path.exists()}")
+            
             if enable_image and image_dir_path.exists():
                 print(f"图片目录存在: {image_dir}")
                 # 列出目录中的文件
@@ -1089,30 +1158,59 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                     print(f"图片目录中的文件数量: {len(image_files)}")
                     if image_files:
                         print(f"图片目录中的文件: {image_files[:5]}{'...' if len(image_files) > 5 else ''}")
+                    else:
+                        print("图片目录为空")
                 except Exception as e:
                     print(f"列出图片目录文件时出错: {e}")
             elif enable_image:
                 print(f"图片目录不存在: {image_dir}")
+                
+            # 如果用户指定了图片路径，也检查该路径
+            if image_path:
+                user_image_path = Path(image_path)
+                print(f"📁 【用户图片路径调试】用户指定图片路径: {image_path}")
+                print(f"📁 【用户图片路径调试】用户图片路径是否存在: {user_image_path.exists()}")
+                if user_image_path.exists():
+                    try:
+                        user_image_files = [f.name for f in user_image_path.iterdir() if f.is_file()]
+                        print(f"📁 【用户图片路径调试】用户图片目录中的文件数量: {len(user_image_files)}")
+                        if user_image_files:
+                            print(f"📁 【用户图片路径调试】用户图片目录中的文件: {user_image_files[:5]}{'...' if len(user_image_files) > 5 else ''}")
+                    except Exception as e:
+                        print(f"📁 【用户图片路径调试】列出用户图片目录文件时出错: {e}")
             
             # 尝试从图片目录获取任意图片
             try:
+                print("📁 【默认图片流程】开始尝试获取默认图片...")
                 image_dir = get_data_path("input/images")
+                print(f"📁 【默认图片流程】图片目录路径: {image_dir}")
+                
                 if Path(image_dir).exists():
+                    print(f"📁 【默认图片流程】图片目录存在，开始搜索图片文件...")
                     image_files = []
                     for ext in ['.jpg', '.jpeg', '.png', '.webp']:
-                        image_files.extend(list(Path(image_dir).glob(f"*{ext}")))
-                        image_files.extend(list(Path(image_dir).glob(f"*{ext.upper()}")))
+                        found_files = list(Path(image_dir).glob(f"*{ext}"))
+                        found_files_upper = list(Path(image_dir).glob(f"*{ext.upper()}"))
+                        print(f"📁 【默认图片流程】扩展名 {ext}: 找到 {len(found_files)} 个文件")
+                        print(f"📁 【默认图片流程】扩展名 {ext.upper()}: 找到 {len(found_files_upper)} 个文件")
+                        image_files.extend(found_files)
+                        image_files.extend(found_files_upper)
+                    
+                    print(f"📁 【默认图片流程】总共找到 {len(image_files)} 个图片文件")
                     
                     if image_files:
                         default_image = str(image_files[0])
-                        print(f"📁 使用默认图片: {default_image}")
+                        print(f"📁 【默认图片流程】使用默认图片: {default_image}")
                         
                         processed_img_path = temp_dir / "processed_image.png"
+                        print(f"📁 【默认图片流程】处理图片到: {processed_img_path}")
+                        
                         processed_img = process_image_for_overlay(
                             default_image,
                             str(processed_img_path),
                             size=(img_size, img_size)
                         )
+                        print(f"📁 【默认图片流程】process_image_for_overlay返回: {processed_img}")
                         
                         if processed_img:
                             print(f"✅ 【图片流程】默认图片处理成功: {processed_img}")
@@ -1129,6 +1227,8 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                     has_image = False
             except Exception as e:
                 print(f"❌ 获取默认图片失败: {e}")
+                import traceback
+                traceback.print_exc()
                 has_image = False
         else:
             if not enable_image:
@@ -1150,7 +1250,7 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             file_ext = Path(gif_path).suffix.lower()
             if file_ext in ['.gif', '.webp']:
                 # 使用改进的GIF处理函数，传递视频时长确保GIF持续整个视频时长
-                processed_gif_path = process_animated_gif_for_video(gif_path, temp_dir, gif_scale, gif_loop_count, duration)
+                processed_gif_path = process_animated_gif_for_video(gif_path, temp_dir, gif_scale, gif_loop_count, duration, gif_rotation)
                 
                 if processed_gif_path:
                     has_gif = True
@@ -1425,13 +1525,16 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             logging.info(f"  🎨 添加背景输入: 索引{bg_index}, 文件{bg_img}")
             
         if enable_image and has_image:
-            if 'processed_img_path' in locals() and processed_img_path:
+            # 确保processed_img_path已定义且文件存在
+            if 'processed_img_path' in locals() and processed_img_path and Path(processed_img_path).exists():
                 ffmpeg_command.extend(['-i', str(processed_img_path)])
                 img_index = input_index
                 input_index += 1
                 logging.info(f"  📸 添加图片输入: 索引{img_index}, 文件{processed_img_path}")
             else:
-                logging.warning(f"  ⚠️ 图片启用但processed_img_path未定义")
+                logging.warning(f"  ⚠️ 图片启用但processed_img_path未定义或文件不存在")
+                img_index = None
+                has_image = False
             
         if enable_gif and has_gif:
             ffmpeg_command.extend(['-i', str(processed_gif_path)])
@@ -1631,6 +1734,7 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
         
         # 处理音乐逻辑
         selected_music_path = None
+        
         if enable_music:
             print(f"【音乐处理】开始处理音乐，视频索引: {video_index}")
             print(f"【音乐处理】音乐参数: enable_music={enable_music}, music_path={music_path}, music_mode={music_mode}, music_volume={music_volume}")
@@ -1651,8 +1755,10 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                         print(f"【音乐处理】使用默认音乐目录中的音乐: {selected_music_path}")
                     else:
                         print(f"【音乐处理】默认音乐目录中没有找到音乐文件: {default_music_dir}")
+                        selected_music_path = None
                 else:
                     print(f"【音乐处理】默认音乐目录不存在: {default_music_dir}")
+                    selected_music_path = None
             else:
                 # 根据不同模式选择音乐文件
                 if Path(music_path).is_file():
@@ -1680,7 +1786,13 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                             # 顺序模式：根据视频索引选择音乐文件
                             # 确保索引不会超出范围
                             global selected_music_index
-                            selected_music_index = video_index % len(music_files)
+                            # 如果selected_music_index为None，初始化为0
+                            if selected_music_index is None:
+                                selected_music_index = 0
+                            # 使用视频索引更新音乐索引
+                            selected_music_index = (selected_music_index + 1) % len(music_files)
+                            # 或者直接使用视频索引
+                            # selected_music_index = video_index % len(music_files)
                             selected_music_path = str(music_files[selected_music_index])
                             print(f"【音乐处理】按顺序选择音乐: {selected_music_path} (索引: {selected_music_index}/{len(music_files)-1}, 视频索引: {video_index})")
                             
@@ -1697,16 +1809,12 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                             for idx, music_file in enumerate(music_files):
                                 marker = "<<< 选中" if idx == 0 else ""
                                 print(f"  [{idx}] {music_file.name} {marker}")
-                    else:  # single模式，选择第一个
-                        selected_music_path = str(music_files[0])
-                        print(f"【音乐处理】选择第一个音乐: {selected_music_path}")
-                        # 添加调试信息
-                        print(f"【音乐处理】调试信息 - 音乐文件列表:")
-                        for idx, music_file in enumerate(music_files):
-                            marker = "<<< 选中" if idx == 0 else ""
-                            print(f"  [{idx}] {music_file.name} {marker}")
+                    else:
+                        print(f"【音乐处理】音乐文件夹中没有找到音乐文件: {music_path}")
+                        selected_music_path = None
                 else:
-                    print(f"【音乐处理】音乐文件夹中没有找到音乐文件: {music_path}")
+                    print(f"【音乐处理】音乐路径不是有效的文件或文件夹: {music_path}")
+                    selected_music_path = None
         else:
             print(f"【音乐处理】音乐功能未启用")
 
@@ -1723,11 +1831,18 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
         
         # 音乐输入
         if selected_music_path:
+            print(f"【音乐处理】开始添加音乐输入到FFmpeg命令")
+            print(f"【音乐处理】音乐文件路径: {selected_music_path}")
+            print(f"【音乐处理】音乐文件存在性检查: {Path(selected_music_path).exists()}")
+            if Path(selected_music_path).exists():
+                print(f"【音乐处理】音乐文件大小: {Path(selected_music_path).stat().st_size} 字节")
+            
             ffmpeg_command.extend(['-i', selected_music_path])
             music_index = input_index
             input_index += 1
             print(f"【音乐处理】添加音乐输入，索引: {music_index}")
-            print(f"【音乐处理】音乐文件路径: {selected_music_path}")
+            print(f"【音乐处理】当前FFmpeg命令长度: {len(ffmpeg_command)}")
+            print(f"【音乐处理】当前输入索引: {input_index}")
             # 检查音乐文件是否存在
             if Path(selected_music_path).exists():
                 print(f"【音乐处理】音乐文件存在，大小: {Path(selected_music_path).stat().st_size} 字节")
@@ -1799,30 +1914,40 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             if selected_music_path:
                 # 计算音量调节值（50% = 0.5）
                 volume_ratio = music_volume / 100.0
-                print(f"【音乐处理】音量比例: {volume_ratio}")
+                print(f"【音乐处理】开始音频流映射处理")
+                print(f"【音乐处理】音量比例: {volume_ratio} (原始音量: {music_volume}%)")
+                print(f"【音乐处理】音乐输入索引: {music_index}")
+                print(f"【音乐处理】是否有叠加素材: {has_any_overlay}")
                 
                 # 添加音频流映射和处理参数
                 if has_any_overlay:
                     # 如果有叠加素材，视频流来自过滤器链
-                    ffmpeg_command.extend([
+                    audio_params = [
                         '-map', '[v]',  # 映射过滤器链的视频输出
                         '-map', f'{music_index}:a?',  # 映射音乐的音频流，?表示如果不存在则忽略
                         '-c:a', 'aac',
                         '-b:a', '128k',
                         '-af', f'volume={volume_ratio}',  # 调节音量
                         '-shortest'  # 以最短的流为准（视频结束时音频也结束）
-                    ])
+                    ]
+                    print(f"【音乐处理】叠加模式 - 视频流映射: [v]")
+                    print(f"【音乐处理】叠加模式 - 音频流映射: {music_index}:a?")
+                    ffmpeg_command.extend(audio_params)
                 else:
                     # 如果没有叠加素材，直接映射视频流
-                    ffmpeg_command.extend([
+                    audio_params = [
                         '-map', '0:v',  # 映射视频流
                         '-map', f'{music_index}:a?',  # 映射音乐的音频流，?表示如果不存在则忽略
                         '-c:a', 'aac',
                         '-b:a', '128k',
                         '-af', f'volume={volume_ratio}',  # 调节音量
                         '-shortest'  # 以最短的流为准（视频结束时音频也结束）
-                    ])
+                    ]
+                    print(f"【音乐处理】直接模式 - 视频流映射: 0:v")
+                    print(f"【音乐处理】直接模式 - 音频流映射: {music_index}:a?")
+                    ffmpeg_command.extend(audio_params)
                 print(f"【音乐处理】添加音频编码参数，音量: {music_volume}%")
+                print(f"【音乐处理】音频参数: {audio_params}")
             else:
                 # 如果没有音乐，不包含音频
                 if has_any_overlay:
@@ -1846,12 +1971,22 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             logging.info(f"  输入文件数: {input_index}")
             logging.info(f"  输出文件: {output_with_subtitle}")
             logging.info(f"  完整命令: {' '.join(ffmpeg_command)}")
+            print(f"【音乐处理】FFmpeg命令详细信息:")
+            print(f"【音乐处理】  命令长度: {len(ffmpeg_command)} 个参数")
+            print(f"【音乐处理】  输入文件数: {input_index}")
+            print(f"【音乐处理】  输出文件: {output_with_subtitle}")
+            print(f"【音乐处理】  是否包含音乐: {selected_music_path is not None}")
+            if selected_music_path:
+                print(f"【音乐处理】  音乐文件: {selected_music_path}")
+                print(f"【音乐处理】  音乐索引: {music_index}")
             print(f"执行命令: {' '.join(ffmpeg_command)}")
             # 报告进度：执行FFmpeg命令中
             if progress_callback:
                 progress_callback("执行视频处理中", 70.0)
                 
+            print(f"【音乐处理】开始执行FFmpeg命令...")
             result = run_ffmpeg_command(ffmpeg_command)
+            print(f"【音乐处理】FFmpeg命令执行结果: {result}")
                 
             if not result:
                 print("添加素材失败，尝试使用备用方法")
@@ -1876,11 +2011,13 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                 volume_ratio = music_volume / 100.0
                 print(f"【音乐处理】只添加音乐，不添加其他素材")
                 print(f"【音乐处理】音乐文件路径: {selected_music_path}")
+                print(f"【音乐处理】音量比例: {volume_ratio} (原始音量: {music_volume}%)")
                 # 检查音乐文件是否存在
                 if Path(selected_music_path).exists():
                     print(f"【音乐处理】音乐文件存在，大小: {Path(selected_music_path).stat().st_size} 字节")
                 else:
                     print(f"【音乐处理】警告：音乐文件不存在！")
+                    print(f"【音乐处理】检查的路径: {selected_music_path}")
                 
                 copy_with_music_cmd = [
                     'ffmpeg', '-y',
@@ -1895,8 +2032,17 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                     '-shortest',
                     str(output_with_subtitle)
                 ]
+                print(f"【音乐处理】纯音乐模式FFmpeg命令详细信息:")
+                print(f"【音乐处理】  输入视频: {video_path}")
+                print(f"【音乐处理】  输入音乐: {selected_music_path}")
+                print(f"【音乐处理】  输出文件: {output_with_subtitle}")
+                print(f"【音乐处理】  视频流映射: 0:v")
+                print(f"【音乐处理】  音频流映射: 1:a?")
                 print(f"执行命令: {' '.join(copy_with_music_cmd)}")
-                if not run_ffmpeg_command(copy_with_music_cmd):
+                print(f"【音乐处理】开始执行纯音乐模式FFmpeg命令...")
+                result = run_ffmpeg_command(copy_with_music_cmd)
+                print(f"【音乐处理】纯音乐模式FFmpeg命令执行结果: {result}")
+                if not result:
                     print("添加音乐失败")
                     return None
             else:
@@ -1940,18 +2086,47 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             print("最终转换失败")
             return None
     
+    except FileNotFoundError as e:
+        error_msg = f"文件未找到错误: {e}"
+        print(error_msg)
+        logging.error(error_msg)
+        if progress_callback:
+            progress_callback(f"错误: {error_msg}", -1)
+        return None
+    except PermissionError as e:
+        error_msg = f"权限错误: {e}"
+        print(error_msg)
+        logging.error(error_msg)
+        if progress_callback:
+            progress_callback(f"错误: {error_msg}", -1)
+        return None
+    except subprocess.CalledProcessError as e:
+        error_msg = f"FFmpeg命令执行失败: {e}"
+        print(error_msg)
+        logging.error(error_msg)
+        if progress_callback:
+            progress_callback(f"错误: {error_msg}", -1)
+        return None
     except Exception as e:
-        print(f"添加字幕时出错: {e}")
+        error_msg = f"添加字幕时出现未知错误: {e}"
+        print(error_msg)
+        logging.error(error_msg)
         import traceback
         traceback.print_exc()
+        if progress_callback:
+            progress_callback(f"错误: {error_msg}", -1)
         return None
     finally:
         # 清理临时文件
         try:
             import shutil
-            shutil.rmtree(temp_dir)
-        except:
-            pass
+            if temp_dir and Path(temp_dir).exists():
+                shutil.rmtree(temp_dir)
+                print(f"已清理临时目录: {temp_dir}")
+                logging.info(f"已清理临时目录: {temp_dir}")
+        except Exception as cleanup_error:
+            print(f"清理临时文件时出错: {cleanup_error}")
+            logging.warning(f"清理临时文件时出错: {cleanup_error}")
 
 
 def fallback_static_subtitle(video_path, subtitle_img_path, output_path, temp_dir, quicktime_compatible=False):
