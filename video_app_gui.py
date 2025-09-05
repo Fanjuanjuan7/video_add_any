@@ -21,9 +21,8 @@ try:
                                 QSpinBox, QDoubleSpinBox, QVBoxLayout, QHBoxLayout, QGridLayout, 
                                 QGroupBox, QMessageBox, QProgressBar, 
                                 QListWidget, QAbstractItemView, QSplitter, QSlider,
-                                QTextEdit, QColorDialog)  # 添加QTextEdit和QColorDialog导入
+                                QTextEdit)  # 添加QTextEdit导入
     from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSettings
-    from PyQt5.QtGui import QColor
     
 except ImportError as e:
     print(f"错误: {e}")
@@ -58,9 +57,9 @@ class ProcessingThread(QThread):
                  enable_background, enable_image, enable_music, music_path, music_mode, music_volume,
                  document_path=None, enable_gif=False, gif_path="", gif_loop_count=-1, 
                  gif_scale=1.0, gif_rotation=0, gif_x=800, gif_y=100, scale_factor=1.1, image_path=None, quality_settings=None,
-                 enable_tts=False, tts_voice="zh-CN-XiaoxiaoNeural", tts_volume=100, tts_text="", auto_match_duration=False,
-                 enable_dynamic_subtitle=False, animation_style="高亮放大", animation_intensity=1.5, highlight_color="#FFD700",
-                 match_mode="随机样式", position_x=50, position_y=50):  # 添加动态字幕参数
+                 enable_tts=False, tts_voice="zh-CN-XiaoxiaoNeural", tts_volume=100, tts_text="", auto_match_duration=True,
+                 enable_dynamic_subtitle=False, animation_style="highlight", animation_intensity=1.5, 
+                 highlight_color="#FFD700", match_mode="fixed"):  # 添加动态字幕参数
         super().__init__()
         # 分别存储不同类型的文件
         self.short_videos = short_videos  # 小于9秒的视频
@@ -105,16 +104,15 @@ class ProcessingThread(QThread):
         self.tts_voice = tts_voice
         self.tts_volume = tts_volume
         self.tts_text = tts_text  # 用户输入的固定TTS文本
-        self.auto_match_duration = auto_match_duration  # 自动匹配视频时长
+        self.auto_match_duration = auto_match_duration  # 添加自动匹配时长参数
         self.user_document_path = document_path  # 保存用户指定的文档路径
-        # 动态字幕参数
+        
+        # 动态字幕相关参数
         self.enable_dynamic_subtitle = enable_dynamic_subtitle
         self.animation_style = animation_style
         self.animation_intensity = animation_intensity
         self.highlight_color = highlight_color
         self.match_mode = match_mode
-        self.position_x = position_x
-        self.position_y = position_y
     
     def run(self):
         import time
@@ -365,22 +363,7 @@ class ProcessingThread(QThread):
                         # 获取音乐模式的实际值
                         music_mode_value = self.music_mode
                         print(f"调用process_video进行精处理，视频索引: {i}")
-                        
-                        # 添加背景音乐详细日志 - ProcessingThread传递阶段
-                        print(f"[背景音乐日志] ProcessingThread传递参数给process_video:")
-                        print(f"  - 视频索引: {i}")
-                        print(f"  - 启用背景音乐: {self.enable_music}")
-                        print(f"  - 音乐路径: '{self.music_path}'")
-                        print(f"  - 音乐模式: {music_mode_value}")
-                        print(f"  - 音乐音量: {self.music_volume}%")
-                        
-                        # 再次验证音乐文件路径
-                        if self.enable_music and self.music_path:
-                            music_file_path = Path(self.music_path)
-                            if music_file_path.exists():
-                                print(f"[背景音乐日志] ProcessingThread确认音乐文件存在: {music_file_path.absolute()}")
-                            else:
-                                print(f"[背景音乐日志] ProcessingThread警告: 音乐文件不存在: {music_file_path.absolute()}")
+                        print(f"音乐参数: enable_music={self.enable_music}, music_path={self.music_path}, music_mode={music_mode_value}, music_volume={self.music_volume}")
                         result = process_video(
                             preprocessed_path, 
                             str(output_path),
@@ -423,14 +406,7 @@ class ProcessingThread(QThread):
                             tts_voice=self.tts_voice,
                             tts_volume=self.tts_volume,
                             tts_text=current_tts_text,
-                            auto_match_duration=self.auto_match_duration,
-                            enable_dynamic_subtitle=self.enable_dynamic_subtitle,
-                            animation_style=self.animation_style,
-                            animation_intensity=self.animation_intensity,
-                            highlight_color=self.highlight_color,
-                            match_mode=self.match_mode,
-                            position_x=self.position_x,
-                            position_y=self.position_y
+                            auto_match_duration=self.auto_match_duration  # 添加自动匹配时长参数
                         )
                         
                         item_end_time = time.time()
@@ -894,9 +870,6 @@ class VideoProcessorApp(QMainWindow):
         add_video_btn = QPushButton("添加视频文件")
         add_video_btn.setFixedHeight(26)
         add_video_btn.clicked.connect(self.add_video_files)
-        add_folder_btn = QPushButton("添加文件夹内视频")
-        add_folder_btn.setFixedHeight(26)
-        add_folder_btn.clicked.connect(self.add_video_folder)
         add_folder_for_processing_btn = QPushButton("添加文件夹整体")
         add_folder_for_processing_btn.setFixedHeight(26)
         add_folder_for_processing_btn.clicked.connect(self.add_folder_for_processing)
@@ -908,7 +881,6 @@ class VideoProcessorApp(QMainWindow):
         clear_btn.clicked.connect(self.clear_video_list)
         
         video_btn_layout.addWidget(add_video_btn)
-        video_btn_layout.addWidget(add_folder_btn)
         video_btn_layout.addWidget(add_folder_for_processing_btn)
         video_btn_layout.addWidget(add_mixed_folder_btn)
         video_btn_layout.addWidget(clear_btn)
@@ -1031,11 +1003,10 @@ class VideoProcessorApp(QMainWindow):
         left_layout.addWidget(output_group)
         left_layout.addStretch()
         
-        # 右侧：样式和高级设置（三列布局）
+        # 右侧：样式和高级设置（两列布局）
         right_widget = QWidget()
-        right_widget.setMinimumWidth(950)  # 增加最小宽度以容纳三列
         right_main_layout = QHBoxLayout(right_widget)
-        right_main_layout.setSpacing(12)
+        right_main_layout.setSpacing(15)
         right_main_layout.setContentsMargins(5, 5, 5, 5)
         
         # 左列
@@ -1043,12 +1014,6 @@ class VideoProcessorApp(QMainWindow):
         left_column_layout = QVBoxLayout(left_column)
         left_column_layout.setSpacing(12)
         left_column_layout.setContentsMargins(0, 0, 0, 0)
-        
-        # 中列
-        middle_column = QWidget()
-        middle_column_layout = QVBoxLayout(middle_column)
-        middle_column_layout.setSpacing(12)
-        middle_column_layout.setContentsMargins(0, 0, 0, 0)
         
         # 右列
         right_column = QWidget()
@@ -1058,8 +1023,8 @@ class VideoProcessorApp(QMainWindow):
         
         # 样式设置组
         style_group = QGroupBox("字幕样式")
-        style_group.setMinimumHeight(180)
-        style_group.setMaximumHeight(200)
+        style_group.setMinimumHeight(260)
+        style_group.setMaximumHeight(280)
         style_layout = QGridLayout()
         style_layout.setSpacing(6)
         style_layout.setContentsMargins(8, 8, 8, 8)
@@ -1087,25 +1052,56 @@ class VideoProcessorApp(QMainWindow):
         self.subtitle_width.setValue(800)
         self.subtitle_width.setToolTip("字幕最大宽度（像素），超过此宽度自动换行")
         
-        style_layout.addWidget(QLabel("字幕样式:"), 0, 0)
-        style_layout.addWidget(self.style_combo, 0, 1)
-        style_layout.addWidget(QLabel("字幕语言:"), 1, 0)
-        style_layout.addWidget(self.lang_combo, 1, 1)
-        style_layout.addWidget(QLabel("字体大小:"), 2, 0)
-        style_layout.addWidget(self.font_size, 2, 1)
-        style_layout.addWidget(QLabel("字幕宽度:"), 3, 0)
-        style_layout.addWidget(self.subtitle_width, 3, 1)
+        # 启用字幕开关
+        self.enable_subtitle = QCheckBox("启用字幕")
+        self.enable_subtitle.setChecked(True)
+        self.enable_subtitle.setToolTip("勾选后视频中会添加字幕")
         
-        style_layout.addWidget(self.quicktime_check, 4, 0, 1, 2)
+        # 字幕位置随机化开关
+        self.random_subtitle_position = QCheckBox("字幕位置随机化")
+        self.random_subtitle_position.setToolTip("勾选后字幕将在指定区域(50,200)到(1030,1720)内随机放置")
+        self.random_subtitle_position.stateChanged.connect(self.on_random_position_changed)
+        
+        # 字幕坐标设置
+        self.subtitle_text_x = QSpinBox()
+        self.subtitle_text_x.setRange(-9999, 9999)
+        self.subtitle_text_x.setValue(0)
+        self.subtitle_text_x.setToolTip("字幕X轴绝对坐标（像素）")
+        
+        self.subtitle_text_y = QSpinBox()
+        self.subtitle_text_y.setRange(-9999, 9999)
+        self.subtitle_text_y.setValue(1190)
+        self.subtitle_text_y.setToolTip("字幕Y轴绝对坐标（像素）")
+        
+        style_layout.addWidget(self.enable_subtitle, 0, 0, 1, 2)
+        style_layout.addWidget(QLabel("字幕样式:"), 1, 0)
+        style_layout.addWidget(self.style_combo, 1, 1)
+        style_layout.addWidget(QLabel("字幕语言:"), 2, 0)
+        style_layout.addWidget(self.lang_combo, 2, 1)
+        style_layout.addWidget(QLabel("字体大小:"), 3, 0)
+        style_layout.addWidget(self.font_size, 3, 1)
+        style_layout.addWidget(QLabel("字幕宽度:"), 4, 0)
+        style_layout.addWidget(self.subtitle_width, 4, 1)
+        style_layout.addWidget(self.random_subtitle_position, 5, 0, 1, 2)
+        style_layout.addWidget(QLabel("X坐标 (像素):"), 6, 0)
+        style_layout.addWidget(self.subtitle_text_x, 6, 1)
+        style_layout.addWidget(QLabel("Y坐标 (像素):"), 7, 0)
+        style_layout.addWidget(self.subtitle_text_y, 7, 1)
+        style_layout.addWidget(self.quicktime_check, 8, 0, 1, 2)
         
         style_group.setLayout(style_layout)
         
         # 图片设置组
         img_group = QGroupBox("图片设置")
-        img_group.setMinimumHeight(120)  # 设置最小高度以让界面不太挤
+        img_group.setMinimumHeight(180)  # 设置最小高度以让界面不太挤
         img_layout = QGridLayout()
         img_layout.setSpacing(6)  # 减少图片设置组间距
         img_layout.setContentsMargins(8, 8, 8, 8)  # 减少图片设置组边距
+        
+        # 启用添加图片开关
+        self.enable_image = QCheckBox("启用添加图片")
+        self.enable_image.setChecked(True)
+        self.enable_image.setToolTip("勾选后视频中会添加匹配的图片")
         
         self.img_x = QSpinBox()
         self.img_x.setRange(-9999, 9999)
@@ -1123,65 +1119,29 @@ class VideoProcessorApp(QMainWindow):
         self.img_size.setSingleStep(10)
         self.img_size.setToolTip("图片大小（像素）")
         
-        img_layout.addWidget(QLabel("X轴坐标 (像素):"), 0, 0)
-        img_layout.addWidget(self.img_x, 0, 1)
-        img_layout.addWidget(QLabel("Y轴坐标 (像素):"), 1, 0)
-        img_layout.addWidget(self.img_y, 1, 1)
-        img_layout.addWidget(QLabel("图片大小 (像素):"), 2, 0)
-        img_layout.addWidget(self.img_size, 2, 1)
+        img_layout.addWidget(self.enable_image, 0, 0, 1, 2)
+        img_layout.addWidget(QLabel("X轴坐标 (像素):"), 1, 0)
+        img_layout.addWidget(self.img_x, 1, 1)
+        img_layout.addWidget(QLabel("Y轴坐标 (像素):"), 2, 0)
+        img_layout.addWidget(self.img_y, 2, 1)
+        img_layout.addWidget(QLabel("图片大小 (像素):"), 3, 0)
+        img_layout.addWidget(self.img_size, 3, 1)
         
         img_group.setLayout(img_layout)
         
-        # 位置设置组
-        subtitle_pos_group = QGroupBox("位置设置")
-        subtitle_pos_group.setMinimumHeight(180)  # 设置最小高度
-        subtitle_pos_layout = QGridLayout()
-        subtitle_pos_layout.setSpacing(6)  # 减少位置设置组间距
-        subtitle_pos_layout.setContentsMargins(8, 8, 8, 8)  # 减少位置设置组边距
-        
-        # 字幕位置随机化勾选框
-        self.random_subtitle_position = QCheckBox("字幕位置随机化")
-        self.random_subtitle_position.setToolTip("勾选后字幕将在指定区域(50,200)到(1030,1720)内随机放置")
-        self.random_subtitle_position.stateChanged.connect(self.on_random_position_changed)
-        subtitle_pos_layout.addWidget(self.random_subtitle_position, 0, 0, 1, 2)
-        
-        self.subtitle_x = QSpinBox()
-        self.subtitle_x.setRange(-9999, 9999)
-        self.subtitle_x.setValue(-50)
-        self.subtitle_x.setToolTip("背景X轴绝对坐标（像素）")
-        
-        self.subtitle_y = QSpinBox()
-        self.subtitle_y.setRange(-9999, 9999)
-        self.subtitle_y.setValue(1100)
-        self.subtitle_y.setToolTip("背景Y轴绝对坐标（像素）")
-        
-        self.subtitle_text_x = QSpinBox()
-        self.subtitle_text_x.setRange(-9999, 9999)
-        self.subtitle_text_x.setValue(0)
-        self.subtitle_text_x.setToolTip("字幕X轴绝对坐标（像素）")
-        
-        self.subtitle_text_y = QSpinBox()
-        self.subtitle_text_y.setRange(-9999, 9999)
-        self.subtitle_text_y.setValue(1190)
-        self.subtitle_text_y.setToolTip("字幕Y轴绝对坐标（像素）")
-        
-        subtitle_pos_layout.addWidget(QLabel("背景X轴坐标 (像素):"), 1, 0)
-        subtitle_pos_layout.addWidget(self.subtitle_x, 1, 1)
-        subtitle_pos_layout.addWidget(QLabel("背景Y轴坐标 (像素):"), 2, 0)
-        subtitle_pos_layout.addWidget(self.subtitle_y, 2, 1)
-        subtitle_pos_layout.addWidget(QLabel("字幕X轴坐标 (像素):"), 3, 0)
-        subtitle_pos_layout.addWidget(self.subtitle_text_x, 3, 1)
-        subtitle_pos_layout.addWidget(QLabel("字幕Y轴坐标 (像素):"), 4, 0)
-        subtitle_pos_layout.addWidget(self.subtitle_text_y, 4, 1)
-        
-        subtitle_pos_group.setLayout(subtitle_pos_layout)
+        # 删除字幕位置设置组（已整合到字幕样式组中）
         
         # 背景设置组
         bg_group = QGroupBox("背景设置")
-        bg_group.setMinimumHeight(100)  # 设置最小高度
+        bg_group.setMinimumHeight(200)  # 设置最小高度
         bg_layout = QGridLayout()
         bg_layout.setSpacing(6)  # 减少背景设置组间距
         bg_layout.setContentsMargins(8, 8, 8, 8)  # 减少背景设置组边距
+        
+        # 启用透明背景开关
+        self.enable_background = QCheckBox("启用透明背景")
+        self.enable_background.setChecked(True)
+        self.enable_background.setToolTip("勾选后字幕会有透明背景")
         
         self.bg_width = QSpinBox()
         self.bg_width.setRange(500, 1500)
@@ -1195,41 +1155,83 @@ class VideoProcessorApp(QMainWindow):
         self.bg_height.setSingleStep(10)
         self.bg_height.setToolTip("背景高度（像素）")
         
-        bg_layout.addWidget(QLabel("背景宽度 (像素):"), 0, 0)
-        bg_layout.addWidget(self.bg_width, 0, 1)
-        bg_layout.addWidget(QLabel("背景高度 (像素):"), 1, 0)
-        bg_layout.addWidget(self.bg_height, 1, 1)
+        # 背景坐标设置
+        self.bg_x = QSpinBox()
+        self.bg_x.setRange(-9999, 9999)
+        self.bg_x.setValue(-50)
+        self.bg_x.setToolTip("背景X轴绝对坐标（像素）")
+        
+        self.bg_y = QSpinBox()
+        self.bg_y.setRange(-9999, 9999)
+        self.bg_y.setValue(1100)
+        self.bg_y.setToolTip("背景Y轴绝对坐标（像素）")
+        
+        bg_layout.addWidget(self.enable_background, 0, 0, 1, 2)
+        bg_layout.addWidget(QLabel("背景宽度 (像素):"), 1, 0)
+        bg_layout.addWidget(self.bg_width, 1, 1)
+        bg_layout.addWidget(QLabel("背景高度 (像素):"), 2, 0)
+        bg_layout.addWidget(self.bg_height, 2, 1)
+        bg_layout.addWidget(QLabel("X坐标 (像素):"), 3, 0)
+        bg_layout.addWidget(self.bg_x, 3, 1)
+        bg_layout.addWidget(QLabel("Y坐标 (像素):"), 4, 0)
+        bg_layout.addWidget(self.bg_y, 4, 1)
+        
+        # 添加去水印设置说明到背景设置下方
+        watermark_desc = QLabel("通过放大视频然后裁剪来去除边缘水印")
+        watermark_desc.setStyleSheet("color: gray; font-size: 12px;")
+        bg_layout.addWidget(watermark_desc, 5, 0, 1, 2)
         
         bg_group.setLayout(bg_layout)
         
-        # 素材选择组
-        material_group = QGroupBox("素材选择")
-        material_group.setMinimumHeight(100)  # 设置最小高度
+        # 智能语音组
+        material_group = QGroupBox("智能语音")
+        material_group.setMinimumHeight(180)  # 设置最小高度
         material_layout = QGridLayout()
         material_layout.setSpacing(6)  # 减少素材选择组间距
         material_layout.setContentsMargins(8, 8, 8, 8)  # 减少素材选择组边距
         
-        # 素材选择勾选框
-        self.enable_subtitle = QCheckBox("添加字幕")
-        self.enable_subtitle.setChecked(True)
-        self.enable_subtitle.setToolTip("勾选后视频中会添加字幕")
-        
-        self.enable_background = QCheckBox("添加透明背景")
-        self.enable_background.setChecked(True)
-        self.enable_background.setToolTip("勾选后字幕会有透明背景")
-        
-        self.enable_image = QCheckBox("添加图片")
-        self.enable_image.setChecked(True)
-        self.enable_image.setToolTip("勾选后视频中会添加匹配的图片")
-        
-        self.enable_voice = QCheckBox("智能配音")
+        # 智能语音勾选框
+        self.enable_voice = QCheckBox("启用智能语音")
         self.enable_voice.setChecked(False)
         self.enable_voice.setToolTip("勾选后会为视频添加AI配音")
         
-        material_layout.addWidget(self.enable_subtitle, 0, 0)
-        material_layout.addWidget(self.enable_background, 0, 1)
-        material_layout.addWidget(self.enable_image, 1, 0)
-        material_layout.addWidget(self.enable_voice, 1, 1)
+        # 语言选择
+        self.voice_language_combo = QComboBox()
+        self.populate_voice_languages()  # 填充语言选项
+        self.voice_language_combo.currentTextChanged.connect(self.on_voice_language_changed)  # 添加语言变化事件
+        
+        # 音色选择
+        self.voice_type_combo = QComboBox()
+        self.populate_voice_types()  # 填充音色选项
+        
+        # 自动匹配时长
+        self.auto_match_duration = QCheckBox("自动匹配时长")
+        self.auto_match_duration.setChecked(True)
+        self.auto_match_duration.setToolTip("勾选后会通过调节播放速度使音频时长与视频一致，检测视频时长和生成的配音时长，通过让配音时长变速去匹配视频时长")
+        self.auto_match_duration.stateChanged.connect(self.on_auto_match_duration_changed)  # 添加状态变化事件
+        
+        # 音量调节
+        self.voice_volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.voice_volume_slider.setRange(0, 100)
+        self.voice_volume_slider.setValue(100)
+        self.voice_volume_label = QLabel("100%")
+        self.voice_volume_slider.valueChanged.connect(
+            lambda value: self.voice_volume_label.setText(f"{value}%")
+        )
+        
+        voice_volume_layout = QHBoxLayout()
+        voice_volume_layout.setSpacing(5)  # 减少音量布局间距
+        voice_volume_layout.addWidget(self.voice_volume_slider)
+        voice_volume_layout.addWidget(self.voice_volume_label)
+        
+        material_layout.addWidget(self.enable_voice, 0, 0, 1, 2)
+        material_layout.addWidget(QLabel("语言:"), 1, 0)
+        material_layout.addWidget(self.voice_language_combo, 1, 1)
+        material_layout.addWidget(QLabel("音色:"), 2, 0)
+        material_layout.addWidget(self.voice_type_combo, 2, 1)
+        material_layout.addWidget(self.auto_match_duration, 3, 0, 1, 2)  # 添加自动匹配时长控件
+        material_layout.addWidget(QLabel("音量:"), 4, 0)
+        material_layout.addLayout(voice_volume_layout, 4, 1)
         
         material_group.setLayout(material_layout)
         
@@ -1302,6 +1304,58 @@ class VideoProcessorApp(QMainWindow):
         self.music_mode.setEnabled(False)
         self.music_volume.setEnabled(False)
         
+        # 动态字幕设置组（添加到音乐设置下方）
+        dynamic_subtitle_group = QGroupBox("动态字幕设置")
+        dynamic_subtitle_group.setMinimumHeight(150)
+        dynamic_subtitle_group.setMaximumHeight(170)
+        dynamic_subtitle_layout = QGridLayout()
+        dynamic_subtitle_layout.setSpacing(6)
+        dynamic_subtitle_layout.setContentsMargins(8, 8, 8, 8)
+        
+        # 启用动态字幕勾选框
+        self.enable_dynamic_subtitle = QCheckBox("启用动态字幕")
+        self.enable_dynamic_subtitle.setChecked(False)
+        self.enable_dynamic_subtitle.setToolTip("勾选后视频中会添加动态字幕效果")
+        
+        # 动画样式选择
+        self.animation_style_combo = QComboBox()
+        self.animation_style_combo.addItem("高亮放大", "highlight")
+        self.animation_style_combo.addItem("弹跳效果", "bounce")
+        self.animation_style_combo.addItem("发光效果", "glow")
+        
+        # 动画强度调节
+        self.animation_intensity = QDoubleSpinBox()
+        self.animation_intensity.setRange(0.5, 3.0)
+        self.animation_intensity.setValue(1.5)
+        self.animation_intensity.setSingleStep(0.1)
+        self.animation_intensity.setDecimals(1)
+        
+        # 高亮颜色选择
+        self.highlight_color_combo = QComboBox()
+        self.highlight_color_combo.addItem("金色", "#FFD700")
+        self.highlight_color_combo.addItem("红色", "#FF6B6B")
+        self.highlight_color_combo.addItem("青色", "#4ECDC4")
+        self.highlight_color_combo.addItem("紫色", "#9B59B6")
+        self.highlight_color_combo.addItem("橙色", "#FF8C00")
+        
+        # 匹配模式选择
+        self.match_mode_combo = QComboBox()
+        self.match_mode_combo.addItem("指定样式", "fixed")
+        self.match_mode_combo.addItem("随机样式", "random")
+        self.match_mode_combo.addItem("循环样式", "cycle")
+        
+        dynamic_subtitle_layout.addWidget(self.enable_dynamic_subtitle, 0, 0, 1, 2)
+        dynamic_subtitle_layout.addWidget(QLabel("动画样式:"), 1, 0)
+        dynamic_subtitle_layout.addWidget(self.animation_style_combo, 1, 1)
+        dynamic_subtitle_layout.addWidget(QLabel("动画强度:"), 2, 0)
+        dynamic_subtitle_layout.addWidget(self.animation_intensity, 2, 1)
+        dynamic_subtitle_layout.addWidget(QLabel("高亮颜色:"), 3, 0)
+        dynamic_subtitle_layout.addWidget(self.highlight_color_combo, 3, 1)
+        dynamic_subtitle_layout.addWidget(QLabel("匹配模式:"), 4, 0)
+        dynamic_subtitle_layout.addWidget(self.match_mode_combo, 4, 1)
+        
+        dynamic_subtitle_group.setLayout(dynamic_subtitle_layout)
+        
         # GIF设置组
         gif_group = QGroupBox("GIF动画设置")
         gif_group.setMinimumHeight(200)
@@ -1373,7 +1427,7 @@ class VideoProcessorApp(QMainWindow):
         
         gif_group.setLayout(gif_layout)
         
-        # 去水印设置组
+        # 去水印设置组（删除说明文字）
         watermark_group = QGroupBox("去水印设置")
         watermark_group.setMinimumHeight(100)
         watermark_group.setMaximumHeight(120)
@@ -1392,98 +1446,35 @@ class VideoProcessorApp(QMainWindow):
         watermark_layout.addWidget(QLabel("缩放系数:"), 0, 0)
         watermark_layout.addWidget(self.scale_factor, 0, 1)
         
-        # 添加说明文字
-        watermark_desc = QLabel("通过放大视频然后裁剪来去除边缘水印")
-        watermark_desc.setStyleSheet("color: gray; font-size: 12px;")
-        watermark_layout.addWidget(watermark_desc, 1, 0, 1, 2)
-        
         watermark_group.setLayout(watermark_layout)
         
-        # 动态字幕控制组（第三列）
-        dynamic_subtitle_group = QGroupBox("动态字幕控制")
-        dynamic_subtitle_group.setMinimumHeight(400)
-        dynamic_layout = QGridLayout()
-        dynamic_layout.setSpacing(8)
-        dynamic_layout.setContentsMargins(8, 8, 8, 8)
-        
-        # 启用动态字幕
-        self.enable_dynamic_subtitle = QCheckBox("启用动态字幕")
-        self.enable_dynamic_subtitle.setToolTip("启用后字幕将与TTS配音同步，当前朗读单词会有动画效果")
-        dynamic_layout.addWidget(self.enable_dynamic_subtitle, 0, 0, 1, 2)
-        
-        # 动画样式选择
-        self.animation_style = QComboBox()
-        self.animation_style.addItems(["高亮放大", "弹跳效果", "发光效果"])
-        self.animation_style.setToolTip("选择字幕动画样式")
-        dynamic_layout.addWidget(QLabel("动画样式:"), 1, 0)
-        dynamic_layout.addWidget(self.animation_style, 1, 1)
-        
-        # 动画强度
-        self.animation_intensity = QDoubleSpinBox()
-        self.animation_intensity.setRange(0.1, 3.0)
-        self.animation_intensity.setValue(1.5)
-        self.animation_intensity.setSingleStep(0.1)
-        self.animation_intensity.setToolTip("动画效果强度（1.0为正常，数值越大效果越明显）")
-        dynamic_layout.addWidget(QLabel("动画强度:"), 2, 0)
-        dynamic_layout.addWidget(self.animation_intensity, 2, 1)
-        
-        # 高亮颜色选择器
-        color_layout = QHBoxLayout()
-        self.highlight_color = QLineEdit("#FFD700")
-        self.highlight_color.setToolTip("当前朗读单词的高亮颜色")
-        self.highlight_color.setMaximumWidth(100)
-        self.color_picker_btn = QPushButton("选择颜色")
-        self.color_picker_btn.setMaximumWidth(80)
-        self.color_picker_btn.clicked.connect(self.open_color_picker)
-        color_layout.addWidget(self.highlight_color)
-        color_layout.addWidget(self.color_picker_btn)
-        dynamic_layout.addWidget(QLabel("高亮颜色:"), 3, 0)
-        dynamic_layout.addLayout(color_layout, 3, 1)
-        
-        # 匹配模式
-        self.subtitle_match_mode = QComboBox()
-        self.subtitle_match_mode.addItems(["随机样式", "循环样式", "指定样式"])
-        self.subtitle_match_mode.setToolTip("选择字幕样式匹配模式")
-        dynamic_layout.addWidget(QLabel("匹配模式:"), 4, 0)
-        dynamic_layout.addWidget(self.subtitle_match_mode, 4, 1)
-        
-        # 字幕位置设置
-        self.subtitle_pos_x = QSpinBox()
-        self.subtitle_pos_x.setRange(-9999, 9999)
-        self.subtitle_pos_x.setValue(640)
-        self.subtitle_pos_x.setToolTip("字幕X轴位置（像素）")
-        dynamic_layout.addWidget(QLabel("X坐标:"), 5, 0)
-        dynamic_layout.addWidget(self.subtitle_pos_x, 5, 1)
-        
-        self.subtitle_pos_y = QSpinBox()
-        self.subtitle_pos_y.setRange(-9999, 9999)
-        self.subtitle_pos_y.setValue(1000)
-        self.subtitle_pos_y.setToolTip("字幕Y轴位置（像素）")
-        dynamic_layout.addWidget(QLabel("Y坐标:"), 6, 0)
-        dynamic_layout.addWidget(self.subtitle_pos_y, 6, 1)
-        
-        dynamic_subtitle_group.setLayout(dynamic_layout)
-        
-        # 添加组件到三列布局
-        # 左列：样式设置、图片设置、位置设置、去水印设置
+        # 重新布局UI面板
+        # 第二列：字幕样式、背景设置
         left_column_layout.addWidget(style_group)
-        left_column_layout.addWidget(img_group)
-        left_column_layout.addWidget(subtitle_pos_group)
-        left_column_layout.addWidget(watermark_group)
+        left_column_layout.addWidget(bg_group)
         left_column_layout.addStretch()
         
-        # 中列：动态字幕控制
-        middle_column_layout.addWidget(dynamic_subtitle_group)
+        # 第三列：动态字幕设置、音乐设置
+        middle_column_layout = QVBoxLayout()
+        middle_column_layout.setSpacing(12)
+        middle_column_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 创建中间列容器
+        middle_column = QWidget()
+        middle_column.setLayout(middle_column_layout)
+        
+        middle_column_layout.addWidget(material_group)
+        middle_column_layout.addWidget(music_group)
+        middle_column_layout.addWidget(dynamic_subtitle_group)  # 添加动态字幕设置
         middle_column_layout.addStretch()
         
-        # 右列：背景设置、素材选择、音乐设置、GIF设置
-        right_column_layout.addWidget(bg_group)
-        right_column_layout.addWidget(material_group)
-        right_column_layout.addWidget(music_group)
+        # 第四列：图片设置、gif动画设置、去水印设置、智能语音设置
+        right_column_layout.addWidget(img_group)
         right_column_layout.addWidget(gif_group)
+        right_column_layout.addWidget(watermark_group)  # 去水印设置放在gif动图设置下方
         right_column_layout.addStretch()
         
-        # 将三列添加到主要水平布局
+        # 添加三列到主要水平布局
         right_main_layout.addWidget(left_column)
         right_main_layout.addWidget(middle_column)
         right_main_layout.addWidget(right_column)
@@ -1493,7 +1484,8 @@ class VideoProcessorApp(QMainWindow):
         splitter.addWidget(right_widget)
         
         # 设置分栏器初始大小
-        splitter.setSizes([350, 950])  # 调整比例以适应三列布局
+        # 第一列宽度为原来宽度的70%，第二、三、四列宽度相同
+        splitter.setSizes([245, 875])  # 调整比例以更好地利用空间
         
         # 添加分栏器到主布局
         main_layout.addWidget(splitter)
@@ -1606,10 +1598,6 @@ class VideoProcessorApp(QMainWindow):
         voice_layout.setSpacing(3)  # 减少智能配音组间距
         voice_layout.setContentsMargins(5, 5, 5, 5)  # 减少智能配音组边距
         
-        # 设置列间距，前两列和后两列间隔30px
-        voice_layout.setColumnMinimumWidth(1, 30)  # 第1列和第2列之间的间距
-        voice_layout.setColumnMinimumWidth(3, 30)  # 第3列和第4列之间的间距
-        
         # API平台选择
         self.voice_api_combo = QComboBox()
         self.voice_api_combo.addItem("OpenAI-Edge-TTS", "edge_tts")
@@ -1619,58 +1607,33 @@ class VideoProcessorApp(QMainWindow):
         voice_layout.addWidget(QLabel("API平台:"), 0, 0)
         voice_layout.addWidget(self.voice_api_combo, 0, 1)
         
-        # 语言选择
-        self.voice_language_combo = QComboBox()
-        self.populate_voice_languages()  # 填充语言选项
-        self.voice_language_combo.currentTextChanged.connect(self.on_voice_language_changed)  # 添加语言变化事件
-        
-        voice_layout.addWidget(QLabel("语言:"), 0, 2)
-        voice_layout.addWidget(self.voice_language_combo, 0, 3)
-        
         # API Key输入
         self.api_key_input = QLineEdit()
         self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.api_key_input.setPlaceholderText("输入API Key")
         
-        voice_layout.addWidget(QLabel("API Key:"), 1, 0)
-        voice_layout.addWidget(self.api_key_input, 1, 1)
-        
-        # 音色选择
-        self.voice_type_combo = QComboBox()
-        self.populate_voice_types()  # 填充音色选项
-        
-        voice_layout.addWidget(QLabel("音色:"), 1, 2)
-        voice_layout.addWidget(self.voice_type_combo, 1, 3)
-        
-        # 性别选择
-        self.voice_gender_combo = QComboBox()
-        self.voice_gender_combo.addItem("男声", "male")
-        self.voice_gender_combo.addItem("女声", "female")
-        
-        voice_layout.addWidget(QLabel("性别:"), 2, 0)
-        voice_layout.addWidget(self.voice_gender_combo, 2, 1)
-        
-        # 自动匹配视频时长
-        self.auto_match_duration = QCheckBox("自动匹配视频时长")
-        self.auto_match_duration.setChecked(True)
-        self.auto_match_duration.setToolTip("勾选后会检测视频时长和配音时长，根据视频时长换算配音变速系数以匹配视频时长")
-        
-        voice_layout.addWidget(self.auto_match_duration, 2, 2, 1, 2)  # 跨两列显示
-        
-        # 测试连接按钮
         api_test_btn = QPushButton("测试连接")
         api_test_btn.clicked.connect(self.test_api_connection)
         api_test_btn.setMaximumWidth(100)  # 限制按钮宽度
         
-        voice_layout.addWidget(api_test_btn, 3, 0)
+        voice_layout.addWidget(QLabel("API Key:"), 1, 0)
+        voice_layout.addWidget(self.api_key_input, 1, 1)
+        voice_layout.addWidget(api_test_btn, 1, 2)
         
         # TTS文本输入
         self.tts_text_input = QTextEdit()
         self.tts_text_input.setMaximumHeight(60)
         self.tts_text_input.setPlaceholderText("输入要转换为语音的文本内容")
         
-        voice_layout.addWidget(QLabel("TTS文本:"), 4, 0)
-        voice_layout.addWidget(self.tts_text_input, 4, 1, 1, 3)
+        voice_layout.addWidget(QLabel("TTS文本:"), 2, 0)
+        voice_layout.addWidget(self.tts_text_input, 2, 1, 1, 2)
+        
+        # 自动匹配时长
+        self.auto_match_duration = QCheckBox("自动匹配时长")
+        self.auto_match_duration.setChecked(True)
+        self.auto_match_duration.setToolTip("勾选后会通过调节播放速度使音频时长与视频一致，检测视频时长和生成的配音时长，通过让配音时长变速去匹配视频时长")
+        
+        voice_layout.addWidget(self.auto_match_duration, 3, 0)
         
         # TTS音量控制
         tts_volume_layout = QHBoxLayout()
@@ -1685,8 +1648,8 @@ class VideoProcessorApp(QMainWindow):
         tts_volume_layout.addWidget(self.tts_volume_slider)
         tts_volume_layout.addWidget(self.tts_volume_label)
         
-        voice_layout.addWidget(QLabel("TTS音量:"), 5, 0)
-        voice_layout.addLayout(tts_volume_layout, 5, 1, 1, 3)
+        voice_layout.addWidget(QLabel("TTS音量:"), 4, 0)
+        voice_layout.addLayout(tts_volume_layout, 4, 1, 1, 2)
         
         voice_group.setLayout(voice_layout)
         
@@ -2087,8 +2050,8 @@ class VideoProcessorApp(QMainWindow):
         img_position_y = self.img_y.value()
         font_size = self.font_size.value()
         subtitle_width = self.subtitle_width.value()  # 获取字幕宽度参数
-        subtitle_x = self.subtitle_x.value()
-        subtitle_y = self.subtitle_y.value()
+        subtitle_x = self.bg_x.value()  # 使用背景设置中的坐标
+        subtitle_y = self.bg_y.value()  # 使用背景设置中的坐标
         bg_width = self.bg_width.value()
         bg_height = self.bg_height.value()
         img_size = self.img_size.value()
@@ -2101,30 +2064,9 @@ class VideoProcessorApp(QMainWindow):
         
         # 获取音乐参数
         enable_music = self.enable_music.isChecked()
-        music_path = self.music_path.text().strip()
+        music_path = self.music_path.text()
         music_mode = self.music_mode.currentData()
         music_volume = self.music_volume.value()
-        
-        # 添加背景音乐详细日志
-        print(f"[背景音乐日志] UI参数获取:")
-        print(f"  - 启用背景音乐: {enable_music}")
-        print(f"  - 音乐路径: '{music_path}'")
-        print(f"  - 音乐模式: {music_mode}")
-        print(f"  - 音乐音量: {music_volume}%")
-        
-        # 检查音乐文件路径有效性
-        if enable_music:
-            if not music_path:
-                print(f"[背景音乐日志] 警告: 启用了背景音乐但未设置音乐路径")
-            else:
-                music_path_obj = Path(music_path)
-                if music_path_obj.exists():
-                    print(f"[背景音乐日志] 音乐文件存在: {music_path_obj.absolute()}")
-                    print(f"[背景音乐日志] 文件大小: {music_path_obj.stat().st_size} 字节")
-                else:
-                    print(f"[背景音乐日志] 错误: 音乐文件不存在: {music_path_obj.absolute()}")
-        else:
-            print(f"[背景音乐日志] 背景音乐功能未启用")
         
         # 获取文档路径
         document_path = self.document_path.text().strip() if hasattr(self, 'document_path') and self.document_path.text().strip() else None
@@ -2179,36 +2121,34 @@ class VideoProcessorApp(QMainWindow):
         tts_volume = 100
         tts_text = ""
         
-        if hasattr(self, 'voice_api_combo'):
-            api_platform = self.voice_api_combo.currentData()
-            print(f"API平台: {api_platform}")
-            if api_platform == "edge_tts":
-                enable_tts = True
-                # 获取TTS相关参数
-                tts_voice = self.voice_type_combo.currentData() or "zh-CN-XiaoxiaoNeural"
-                tts_volume = self.tts_volume_slider.value() if hasattr(self, 'tts_volume_slider') else 100
-                # 修改TTS文本获取逻辑：如果用户没有输入文本，则从字幕配置中获取
-                user_tts_text = self.tts_text_input.toPlainText().strip() if hasattr(self, 'tts_text_input') else ""
-                if user_tts_text:
-                    tts_text = user_tts_text
-                else:
-                    # 如果用户没有输入TTS文本，则在处理每个视频时从字幕配置中获取对应的文本
-                    print("用户未输入TTS文本，将在处理每个视频时从字幕配置中获取...")
-                    tts_text = ""  # 将在处理每个视频时获取
-                print(f"TTS设置: enable={enable_tts}, voice={tts_voice}, volume={tts_volume}, text='{tts_text}'")
+        # 检查是否启用了智能语音
+        if self.enable_voice.isChecked():
+            enable_tts = True
+            # 获取TTS相关参数
+            tts_voice = self.voice_type_combo.currentData() or "zh-CN-XiaoxiaoNeural"
+            tts_volume = self.voice_volume_slider.value()
+            # 修改TTS文本获取逻辑：如果用户没有输入文本，则从字幕配置中获取
+            user_tts_text = self.tts_text_input.toPlainText().strip() if hasattr(self, 'tts_text_input') else ""
+            if user_tts_text:
+                tts_text = user_tts_text
+            else:
+                # 如果用户没有输入TTS文本，则在处理每个视频时从字幕配置中获取对应的文本
+                print("用户未输入TTS文本，将在处理每个视频时从字幕配置中获取...")
+                tts_text = ""  # 将在处理每个视频时获取
+            print(f"TTS设置: enable={enable_tts}, voice={tts_voice}, volume={tts_volume}, text='{tts_text}'")
+        
+        # 获取动态字幕参数
+        enable_dynamic_subtitle = self.enable_dynamic_subtitle.isChecked()
+        animation_style = self.animation_style_combo.currentData()
+        animation_intensity = self.animation_intensity.value()
+        highlight_color = self.highlight_color_combo.currentData()
+        match_mode = self.match_mode_combo.currentData()
+        
+        print(f"[动态字幕] 参数设置: 启用={enable_dynamic_subtitle}, 样式={animation_style}, 强度={animation_intensity}, 颜色={highlight_color}, 模式={match_mode}")
         
         # 启动处理线程，传递分类后的文件列表
-        # 获取动态字幕参数
-        enable_dynamic_subtitle = self.enable_dynamic_subtitle.isChecked() if hasattr(self, 'enable_dynamic_subtitle') else False
-        animation_style = self.animation_style.currentText() if hasattr(self, 'animation_style') else "高亮放大"
-        animation_intensity = self.animation_intensity.value() if hasattr(self, 'animation_intensity') else 1.5
-        highlight_color = getattr(self, 'highlight_color_value', "#FFD700")
-        match_mode = self.match_mode.currentText() if hasattr(self, 'match_mode') else "随机样式"
-        position_x = self.position_x.value() if hasattr(self, 'position_x') else 50
-        position_y = self.position_y.value() if hasattr(self, 'position_y') else 50
-        
         self.processing_thread = ProcessingThread(
-            short_videos, long_videos, folders, output_dir, style, lang,
+            short_videos, long_videos, folders, output_dir, style, lang, 
             quicktime_compatible, img_position_x, img_position_y,
             font_size, subtitle_width, subtitle_x, subtitle_y, bg_width, bg_height, img_size,
             self.subtitle_text_x.value(), self.subtitle_text_y.value(),
@@ -2216,10 +2156,8 @@ class VideoProcessorApp(QMainWindow):
             enable_music, music_path, music_mode, music_volume,
             document_path, enable_gif, gif_path, gif_loop_count, gif_scale, self.gif_rotation.value(), gif_x, gif_y, scale_factor, image_path,
             quality_settings,  # 添加质量设置参数
-            enable_tts, tts_voice, tts_volume, tts_text,  # 添加TTS参数
-            self.auto_match_duration.isChecked(),  # 添加auto_match_duration参数
-            enable_dynamic_subtitle, animation_style, animation_intensity, highlight_color,  # 添加动态字幕参数
-            match_mode, position_x, position_y  # 添加新的动态字幕参数
+            enable_tts, tts_voice, tts_volume, tts_text, self.auto_match_duration.isChecked(),  # 添加TTS参数和自动匹配时长参数
+            enable_dynamic_subtitle, animation_style, animation_intensity, highlight_color, match_mode  # 添加动态字幕参数
         )
         
         self.processing_thread.progress_updated.connect(self.update_progress)
@@ -2262,6 +2200,7 @@ class VideoProcessorApp(QMainWindow):
             avg_time = stats.get('avg_time', 0)
             failed_videos = stats.get('failed_videos', [])
             output_dir = stats.get('output_dir', '')
+
             error_msg = stats.get('error', '')
             
             # 格式化时间
@@ -2523,8 +2462,6 @@ class VideoProcessorApp(QMainWindow):
         self.subtitle_width.setValue(self.settings.value("subtitle_width", 800, type=int))
         
         # 字幕位置
-        self.subtitle_x.setValue(self.settings.value("subtitle_x", -50, type=int))
-        self.subtitle_y.setValue(self.settings.value("subtitle_y", 1100, type=int))
         self.subtitle_text_x.setValue(self.settings.value("subtitle_text_x", 0, type=int))
         self.subtitle_text_y.setValue(self.settings.value("subtitle_text_y", 1190, type=int))
         
@@ -2568,25 +2505,16 @@ class VideoProcessorApp(QMainWindow):
         if 0 <= voice_api_idx < self.voice_api_combo.count():
             self.voice_api_combo.setCurrentIndex(voice_api_idx)
         
-        # 初始化语言选项
-        self.populate_voice_languages()
-        voice_language_idx = self.settings.value("voice_language_idx", 0, type=int)
-        if 0 <= voice_language_idx < self.voice_language_combo.count():
-            self.voice_language_combo.setCurrentIndex(voice_language_idx)
-        
+        # 删除语言、音色、性别参数
         self.api_key_input.setText(self.settings.value("api_key", ""))
         
-        # 初始化音色选项
-        self.populate_voice_types()
-        voice_type_idx = self.settings.value("voice_type_idx", 0, type=int)
-        if 0 <= voice_type_idx < self.voice_type_combo.count():
-            self.voice_type_combo.setCurrentIndex(voice_type_idx)
+        auto_match_duration = self.settings.value("auto_match_duration", True, type=bool)
+        self.auto_match_duration.setChecked(auto_match_duration)
         
-        voice_gender_idx = self.settings.value("voice_gender_idx", 0, type=int)
-        if 0 <= voice_gender_idx < self.voice_gender_combo.count():
-            self.voice_gender_combo.setCurrentIndex(voice_gender_idx)
-        
-        self.auto_match_duration.setChecked(self.settings.value("auto_match_duration", True, type=bool))
+        # 同步视频处理标签页和设置标签页中的自动匹配时长控件
+        if hasattr(self, 'material_group') and self.material_group.findChild(QCheckBox, "auto_match_duration"):
+            material_auto_match = self.material_group.findChild(QCheckBox, "auto_match_duration")
+            material_auto_match.setChecked(auto_match_duration)
         
         # 文档路径
         self.document_path.setText(self.settings.value("document_path", ""))
@@ -2594,6 +2522,22 @@ class VideoProcessorApp(QMainWindow):
         # 图片路径
         if hasattr(self, 'image_path'):
             self.image_path.setText(self.settings.value("image_path", ""))
+        
+        # 动态字幕设置
+        self.enable_dynamic_subtitle.setChecked(self.settings.value("enable_dynamic_subtitle", False, type=bool))
+        animation_style_idx = self.settings.value("animation_style_idx", 0, type=int)
+        if 0 <= animation_style_idx < self.animation_style_combo.count():
+            self.animation_style_combo.setCurrentIndex(animation_style_idx)
+            
+        self.animation_intensity.setValue(self.settings.value("animation_intensity", 1.5, type=float))
+        
+        highlight_color_idx = self.settings.value("highlight_color_idx", 0, type=int)
+        if 0 <= highlight_color_idx < self.highlight_color_combo.count():
+            self.highlight_color_combo.setCurrentIndex(highlight_color_idx)
+            
+        match_mode_idx = self.settings.value("match_mode_idx", 0, type=int)
+        if 0 <= match_mode_idx < self.match_mode_combo.count():
+            self.match_mode_combo.setCurrentIndex(match_mode_idx)
         
         # 加载质量设置参数
         if hasattr(self, 'crf_value'):
@@ -2627,43 +2571,67 @@ class VideoProcessorApp(QMainWindow):
             pixfmt_index = self.pixfmt_combo.findData(pixfmt_value)
             if pixfmt_index >= 0:
                 self.pixfmt_combo.setCurrentIndex(pixfmt_index)
+    
+    def on_auto_match_duration_changed(self, state):
+        """处理自动匹配时长勾选框状态变化"""
+        # 同步设置标签页和视频处理标签页中的自动匹配时长控件
+        is_checked = state == Qt.CheckState.Checked
+        
+        # 更新设置标签页中的控件（如果存在）
+        if hasattr(self, 'voice_group'):
+            settings_auto_match = self.voice_group.findChild(QCheckBox, "auto_match_duration")
+            if settings_auto_match and settings_auto_match.isChecked() != is_checked:
+                settings_auto_match.setChecked(is_checked)
+        
+        # 更新视频处理标签页中的控件（如果存在）
+        if hasattr(self, 'material_group'):
+            material_auto_match = self.material_group.findChild(QCheckBox, "auto_match_duration")
+            if material_auto_match and material_auto_match.isChecked() != is_checked:
+                material_auto_match.setChecked(is_checked)
+        
+        print(f"【自动匹配时长】状态变化: checked={is_checked}")
         
         # 更新音乐控件状态
         self.on_music_enabled_changed(Qt.CheckState.Checked if self.enable_music.isChecked() else Qt.CheckState.Unchecked)
     
+    def save_settings(self):
+        """保存设置"""
+        self.settings.setValue("save_paths", self.save_paths_check.isChecked())
+        self.settings.setValue("default_quicktime", self.default_qt_check.isChecked())
+        
+        # 应用QuickTime兼容模式设置
+        quicktime = self.default_qt_check.isChecked()
+        self.quicktime_check.setChecked(quicktime)
+        
+        # 保存当前设置
+        self.save_current_settings()
+        
+        QMessageBox.information(self, "设置已保存", "设置已成功保存")
+    
     def save_current_settings(self):
         """保存当前设置"""
+        # 保存路径设置
+        self.settings.setValue("save_paths", self.save_paths_check.isChecked())
+        self.settings.setValue("default_quicktime", self.default_qt_check.isChecked())
+        
+        # 保存目录设置（仅在启用保存路径时）
+        if self.save_paths_check.isChecked():
+            self.settings.setValue("output_dir", self.output_dir.text())
+        
         # 保存样式和语言选择
         self.settings.setValue("style_idx", self.style_combo.currentIndex())
         self.settings.setValue("lang_idx", self.lang_combo.currentIndex())
         
-        # 保存QuickTime兼容模式
-        self.settings.setValue("quicktime", self.quicktime_check.isChecked())
-        
-        # 保存图片位置
+        # 保存位置设置
         self.settings.setValue("img_x", self.img_x.value())
         self.settings.setValue("img_y", self.img_y.value())
-        
-        # 保存字体大小
         self.settings.setValue("font_size", self.font_size.value())
-        
-        # 保存字幕宽度
         self.settings.setValue("subtitle_width", self.subtitle_width.value())
-        
-        # 保存字幕位置
-        self.settings.setValue("subtitle_x", self.subtitle_x.value())
-        self.settings.setValue("subtitle_y", self.subtitle_y.value())
         self.settings.setValue("subtitle_text_x", self.subtitle_text_x.value())
         self.settings.setValue("subtitle_text_y", self.subtitle_text_y.value())
-        
-        # 保存背景大小
         self.settings.setValue("bg_width", self.bg_width.value())
         self.settings.setValue("bg_height", self.bg_height.value())
-        
-        # 保存图片大小
         self.settings.setValue("img_size", self.img_size.value())
-        
-        # 保存字幕位置随机化设置
         self.settings.setValue("random_subtitle_position", self.random_subtitle_position.isChecked())
         
         # 保存素材选择设置
@@ -2691,21 +2659,20 @@ class VideoProcessorApp(QMainWindow):
         
         # 保存智能配音设置
         self.settings.setValue("voice_api_idx", self.voice_api_combo.currentIndex())
-        self.settings.setValue("voice_language_idx", self.voice_language_combo.currentIndex())
         self.settings.setValue("api_key", self.api_key_input.text())
-        self.settings.setValue("voice_type_idx", self.voice_type_combo.currentIndex())
-        self.settings.setValue("voice_gender_idx", self.voice_gender_combo.currentIndex())
         self.settings.setValue("auto_match_duration", self.auto_match_duration.isChecked())
         
-        # 保存文档路径
+        # 保存文档和图片路径
         self.settings.setValue("document_path", self.document_path.text())
-        
-        # 保存图片路径
         if hasattr(self, 'image_path'):
             self.settings.setValue("image_path", self.image_path.text())
         
-        # 保存输出目录
-        self.settings.setValue("output_dir", self.output_dir.text())
+        # 保存动态字幕设置
+        self.settings.setValue("enable_dynamic_subtitle", self.enable_dynamic_subtitle.isChecked())
+        self.settings.setValue("animation_style_idx", self.animation_style_combo.currentIndex())
+        self.settings.setValue("animation_intensity", self.animation_intensity.value())
+        self.settings.setValue("highlight_color_idx", self.highlight_color_combo.currentIndex())
+        self.settings.setValue("match_mode_idx", self.match_mode_combo.currentIndex())
         
         # 保存质量设置参数
         if hasattr(self, 'crf_value'):
@@ -2719,26 +2686,10 @@ class VideoProcessorApp(QMainWindow):
             self.settings.setValue("tune_value", self.tune_combo.currentData())
             self.settings.setValue("pixfmt_value", self.pixfmt_combo.currentData())
     
-    def save_settings(self):
-        """保存设置"""
-        self.settings.setValue("save_paths", self.save_paths_check.isChecked())
-        self.settings.setValue("default_quicktime", self.default_qt_check.isChecked())
-        
-        # 应用QuickTime兼容模式设置
-        quicktime = self.default_qt_check.isChecked()
-        self.quicktime_check.setChecked(quicktime)
-        
-        # 保存当前设置
-        self.save_current_settings()
-        
-        QMessageBox.information(self, "设置已保存", "设置已成功保存")
-    
     def on_random_position_changed(self, state):
         """处理字幕位置随机化勾选框状态变化"""
         # 当勾选随机位置时，禁用手动位置输入框
         enabled = state != Qt.CheckState.Checked
-        self.subtitle_x.setEnabled(enabled)
-        self.subtitle_y.setEnabled(enabled)
         self.subtitle_text_x.setEnabled(enabled)
         self.subtitle_text_y.setEnabled(enabled)
         
@@ -2871,19 +2822,6 @@ class VideoProcessorApp(QMainWindow):
     def on_volume_changed(self, value):
         """处理音量滑块变化"""
         self.volume_label.setText(f"{value}%")
-    
-    def open_color_picker(self):
-        """打开颜色选择器"""
-        try:
-            current_color = QColor(self.highlight_color.text())
-            color = QColorDialog.getColor(current_color, self, "选择高亮颜色")
-            if color.isValid():
-                self.highlight_color.setText(color.name())
-        except Exception as e:
-            # 如果当前颜色格式无效，使用默认颜色
-            color = QColorDialog.getColor(QColor("#FFD700"), self, "选择高亮颜色")
-            if color.isValid():
-                self.highlight_color.setText(color.name())
     
     def populate_voice_languages(self):
         """填充语言选项（根据API平台）"""
