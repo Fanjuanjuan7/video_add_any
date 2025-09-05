@@ -92,36 +92,36 @@ class CodeChecker:
     
     def check_unused_code(self, file_path, tree):
         """检查无用代码"""
+        imports, used_names = self._collect_imports_and_usage(tree)
+        
         # 检查未使用的导入
+        common_imports = {'sys', 'os', 'pathlib', 'time', 'random', 'json', 'subprocess', 'shutil'}
+        for imp in imports:
+            if (imp not in used_names and 
+                not imp.startswith('_') and 
+                imp not in common_imports):
+                self.issues.append({
+                    'type': 'unused_import',
+                    'file': str(file_path),
+                    'line': 0,
+                    'message': f'未使用的导入: {imp}'
+                })
+    
+    def _collect_imports_and_usage(self, tree):
+        """收集导入和使用情况"""
         imports = set()
         used_names = set()
         
         for node in ast.walk(tree):
             if isinstance(node, (ast.Import, ast.ImportFrom)):
-                if isinstance(node, ast.Import):
-                    for alias in node.names:
-                        imports.add(alias.name)
-                else:  # ImportFrom
-                    for alias in node.names:
-                        imports.add(alias.name)
+                for alias in node.names:
+                    imports.add(alias.name)
             elif isinstance(node, ast.Name):
                 used_names.add(node.id)
-            elif isinstance(node, ast.Attribute):
-                # 检查属性访问，如 pd.read_csv
-                if isinstance(node.value, ast.Name):
-                    used_names.add(node.value.id)
+            elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+                used_names.add(node.value.id)
         
-        # 检查未使用的导入
-        for imp in imports:
-            if imp not in used_names and not imp.startswith('_'):
-                # 忽略一些常见的内置导入
-                if imp not in {'sys', 'os', 'pathlib', 'time', 'random', 'json', 'subprocess', 'shutil'}:
-                    self.issues.append({
-                        'type': 'unused_import',
-                        'file': str(file_path),
-                        'line': node.lineno if 'node' in locals() and hasattr(node, 'lineno') else 0,
-                        'message': f'未使用的导入: {imp}'
-                    })
+        return imports, used_names
     
     def check_logic_conflicts(self, file_path, tree):
         """检查逻辑冲突"""

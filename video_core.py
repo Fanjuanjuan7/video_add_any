@@ -5,6 +5,7 @@
 负责视频处理的主要逻辑，包括视频长度判断、放大裁剪、添加字幕等功能
 """
 
+import os
 import subprocess
 import sys
 import shutil
@@ -25,8 +26,7 @@ from log_manager import init_logging, log_with_capture
 # 初始化日志系统
 log_manager = init_logging()
 
-# 全局变量用于存储音乐索引
-selected_music_index = None
+# 全局变量已移除，现在直接使用video_index计算音乐索引
 
 
 def create_rounded_rect_background(width, height, radius, output_path, bg_color=(0, 0, 0, 128), sample_frame=None):
@@ -84,18 +84,77 @@ def create_rounded_rect_background(width, height, radius, output_path, bg_color=
     except Exception as e:
         print(f"创建圆角矩形背景失败: {e}")
         return None
-import os
-import random
-import subprocess
-import tempfile
-import time
 import uuid
-from pathlib import Path
-
 from PIL import Image, ImageDraw, ImageFont
 
-from log_manager import log_with_capture
 
+def _apply_final_conversion(input_path, output_path, progress_callback=None):
+    """应用最终转换，添加QuickTime兼容性"""
+    ensure_dir(Path(output_path).parent)
+    
+    final_cmd = [
+        'ffmpeg', '-y',
+        '-i', str(input_path),
+        '-c', 'copy',
+        '-movflags', '+faststart',
+        str(output_path)
+    ]
+    
+    print(f"执行命令: {' '.join(final_cmd)}")
+    # 报告进度：最终转换
+    if progress_callback:
+        progress_callback("最终转换", 95.0)
+        
+    return run_ffmpeg_command(final_cmd)
+
+
+def trim_music_to_video_duration(music_path, video_duration, output_path):
+    """
+    根据视频时长裁剪音乐文件
+    
+    参数:
+        music_path: 音乐文件路径
+        video_duration: 视频时长（秒）
+        output_path: 裁剪后音乐的输出路径
+        
+    返回:
+        裁剪后的音乐文件路径（字符串格式），失败返回None
+    """
+    try:
+        # 获取音乐文件时长
+        music_duration = get_audio_duration(music_path)
+        if music_duration is None:
+            print(f"无法获取音乐文件时长: {music_path}")
+            return None
+            
+        print(f"音乐原始时长: {music_duration}秒，视频时长: {video_duration}秒")
+        
+        # 如果音乐时长小于等于视频时长，直接返回原文件（确保返回字符串）
+        if music_duration <= video_duration:
+            print("音乐时长不超过视频时长，无需裁剪")
+            return str(music_path)  # 确保返回字符串格式
+            
+        # 裁剪音乐到视频时长
+        print(f"裁剪音乐从 {music_duration}秒 到 {video_duration}秒")
+        
+        trim_cmd = [
+            "ffmpeg", "-y",  # 覆盖输出文件
+            "-i", str(music_path),
+            "-t", str(video_duration),  # 设置输出时长
+            "-c", "copy",  # 复制编码，避免重新编码
+            str(output_path)
+        ]
+        
+        if run_ffmpeg_command(trim_cmd, quiet=True):
+            print(f"音乐裁剪成功: {output_path}")
+            return str(output_path)  # 确保返回字符串格式
+        else:
+            print("音乐裁剪失败")
+            return None
+            
+    except Exception as e:
+        print(f"音乐裁剪过程中发生错误: {e}")
+        return None
 
 
 @log_with_capture
@@ -108,7 +167,9 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
                  gif_path="", gif_loop_count=-1, gif_scale=1.0, gif_rotation=0, gif_x=800, gif_y=100, scale_factor=1.1, 
                  image_path=None, subtitle_width=800, quality_settings=None, progress_callback=None,
                  video_index=0, enable_tts=False, tts_voice="zh-CN-XiaoxiaoNeural", 
-                 tts_volume=100, tts_text="", auto_match_duration=False):  # 添加TTS相关参数和自动匹配时长参数
+                 tts_volume=100, tts_text="", auto_match_duration=False,
+                 enable_dynamic_subtitle=False, animation_style="高亮放大", animation_intensity=1.5, highlight_color="#FFD700",
+                 match_mode="随机样式", position_x=540, position_y=960):  # 添加动态字幕参数
     """
     处理视频的主函数（精处理阶段）
     
@@ -314,7 +375,14 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
             subtitle_width=subtitle_width,
             quality_settings=quality_settings,
             progress_callback=progress_callback,  # 添加进度回调函数
-            video_index=video_index  # 传递视频索引参数
+            video_index=video_index,  # 传递视频索引参数
+            enable_dynamic_subtitle=enable_dynamic_subtitle,
+            animation_style=animation_style,
+            animation_intensity=animation_intensity,
+            highlight_color=highlight_color,
+            match_mode=match_mode,
+            position_x=position_x,
+            position_y=position_y
         )
         
         if not final_path:
@@ -875,7 +943,9 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                         music_mode="single", music_volume=50, document_path=None, enable_gif=False, 
                         gif_path="", gif_loop_count=-1, gif_scale=1.0, gif_rotation=0, gif_x=800, gif_y=100, scale_factor=1.1, 
                         image_path=None, subtitle_width=800, quality_settings=None, progress_callback=None,
-                        video_index=0):  # 添加视频索引参数
+                        video_index=0, enable_dynamic_subtitle=False, animation_style="高亮放大", 
+                        animation_intensity=1.5, highlight_color="#FFD700", match_mode="随机样式", 
+                        position_x=540, position_y=960):  # 添加动态字幕参数
     """
     添加字幕到视频
     
@@ -952,6 +1022,29 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
         
         # 2. 加载字幕配置
         subtitle_df = None
+        
+        # 检查是否启用动态字幕
+        if enable_dynamic_subtitle:
+            print(f"[动态字幕] 启用动态字幕功能")
+            print(f"[动态字幕] 动画样式: {animation_style}")
+            print(f"[动态字幕] 动画强度: {animation_intensity}")
+            print(f"[动态字幕] 高亮颜色: {highlight_color}")
+            
+            # 导入动态字幕模块
+            try:
+                from dynamic_subtitle import DynamicSubtitleProcessor
+                dynamic_processor = DynamicSubtitleProcessor(
+                    animation_style=animation_style,
+                    animation_intensity=animation_intensity,
+                    highlight_color=highlight_color,
+                    match_mode=match_mode,
+                    position_x=position_x,
+                    position_y=position_y
+                )
+                print(f"[动态字幕] 动态字幕处理器初始化成功")
+            except ImportError as e:
+                print(f"[动态字幕] 导入动态字幕模块失败: {e}")
+                enable_dynamic_subtitle = False
         
         # 检查GIF文件是否存在
         if enable_gif and gif_path and Path(gif_path).exists():
@@ -1474,6 +1567,50 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             # 调试信息：打印字体大小
             print(f"ขนาดตัวอักษรที่ส่งไปยัง create_subtitle_image: {font_size}")
             
+            # 检查是否使用动态字幕
+            if enable_dynamic_subtitle and 'dynamic_processor' in locals():
+                print(f"[动态字幕] 使用动态字幕处理器生成字幕")
+                try:
+                    # 使用动态字幕处理器生成ASS字幕文件
+                    subtitle_ass_path = temp_dir / "subtitle.ass"
+                    subtitle_file = dynamic_processor.create_dynamic_subtitle(
+                        text=subtitle_text,
+                        width=subtitle_width,
+                        height=subtitle_height,
+                        font_size=font_size,
+                        output_path=str(subtitle_ass_path)
+                    )
+                    print(f"[动态字幕] 动态字幕生成成功: {subtitle_file}")
+                    # 标记使用ASS字幕
+                    use_ass_subtitle = True
+                    subtitle_img = subtitle_file
+                except Exception as e:
+                    print(f"[动态字幕] 动态字幕生成失败: {e}")
+                    # 回退到静态字幕
+                    subtitle_img = create_subtitle_image(
+                        subtitle_text, 
+                        style=style, 
+                        width=subtitle_width, 
+                        height=subtitle_height, 
+                        font_size=font_size,
+                        output_path=str(subtitle_img_path)
+                    )
+                    print(f"[动态字幕] 回退到静态字幕: {subtitle_img}")
+                    use_ass_subtitle = False
+            else:
+                # 使用静态字幕
+                print(f"[字幕] 使用静态字幕生成")
+                subtitle_img = create_subtitle_image(
+                    subtitle_text, 
+                    style=style, 
+                    width=subtitle_width, 
+                    height=subtitle_height, 
+                    font_size=font_size,
+                    output_path=str(subtitle_img_path)
+                )
+                print(f"[字幕] 静态字幕生成: {subtitle_img}")
+                use_ass_subtitle = False
+            
             # ใช้พารามิเตอร์ขนาดตัวอักษรที่ส่งมาแทนการกำหนดขนาดตัวอักษรโดยตรง
             # ปรับความกว้างของภาพตัวอักษรให้ตรงกับความกว้างของข้อความตัวอักษร ไม่ใช่ความกว้างของวิดีโอ เพื่อป้องกันการคำนวณตำแหน่งผิดพลาด
             subtitle_img = create_subtitle_image(
@@ -1724,57 +1861,75 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                 logging.warning(f"  ⚠️ GIF启用但gif_index为None或has_gif为False")
             
         # 叠加字幕（如果启用）
-        if enable_subtitle and subtitle_index is not None:
-            # 修正坐标系统：将1080x1920坐标系统映射到实际视频尺寸
-            # 获取处理后视频的实际尺寸（应该是1080x1920）
-            video_info = get_video_info(video_path)  # 这里应该使用处理后的视频路径
-            if video_info:
-                actual_width, actual_height, _ = video_info
-                # 计算坐标缩放比例
-                x_scale = actual_width / 1080.0
-                y_scale = actual_height / 1920.0
+        if enable_subtitle:
+            if use_ass_subtitle and subtitle_ass_path:
+                # 使用ASS字幕文件
+                # ASS字幕不需要作为输入流，直接在过滤器中使用
+                # 确保跨平台路径格式正确
+                ass_path_str = str(subtitle_ass_path)
+                if os.name == 'nt':  # Windows系统
+                    # 将反斜杠替换为正斜杠，保持驱动器字母格式 (C:/path/to/file)
+                    ass_path_str = ass_path_str.replace('\\', '/')
+                else:
+                    # Unix/Linux/macOS系统，确保使用正斜杠
+                    ass_path_str = ass_path_str.replace('\\', '/')
+                ass_filter = f"[{current_stream}]ass=filename={ass_path_str}[v]"
+                filter_complex_parts.append(ass_filter)
+                logging.info(f"  📝 添加ASS字幕: {current_stream} -> v")
+                logging.info(f"    ASS文件: {subtitle_ass_path}")
+                current_stream = "v"
+                # stream_index += 1  # 不需要增加，因为直接输出到[v]
+            elif subtitle_index is not None:
+                # 使用PNG图片字幕（回退模式）
+                # 修正坐标系统：将1080x1920坐标系统映射到实际视频尺寸
+                video_info = get_video_info(video_path)
+                if video_info:
+                    actual_width, actual_height, _ = video_info
+                    # 计算坐标缩放比例
+                    x_scale = actual_width / 1080.0
+                    y_scale = actual_height / 1920.0
+                    
+                    # 转换坐标到实际视频尺寸
+                    scaled_subtitle_x = int(subtitle_absolute_x * x_scale)
+                    scaled_subtitle_y = int(final_y_position * y_scale)
+                    scaled_start_y = int(start_y_position * y_scale)
+                    scaled_final_y = int(final_y_position * y_scale)
+                    
+                    print(f"🔧 坐标系统转换: 原始({subtitle_absolute_x}, {final_y_position}) -> 实际({scaled_subtitle_x}, {scaled_subtitle_y})")
+                    print(f"🔧 缩放比例: X={x_scale:.3f}, Y={y_scale:.3f}")
+                    logging.info(f"🔧 坐标系统转换: 原始({subtitle_absolute_x}, {final_y_position}) -> 实际({scaled_subtitle_x}, {scaled_subtitle_y})")
+                else:
+                    # 如果无法获取视频信息，使用原始坐标
+                    scaled_subtitle_x = subtitle_absolute_x
+                    scaled_subtitle_y = final_y_position
+                    scaled_start_y = start_y_position
+                    scaled_final_y = final_y_position
+                    print("⚠️ 无法获取视频信息，使用原始坐标")
+                    logging.warning("⚠️ 无法获取视频信息，使用原始坐标")
                 
-                # 转换坐标到实际视频尺寸
-                scaled_subtitle_x = int(subtitle_absolute_x * x_scale)
-                scaled_subtitle_y = int(final_y_position * y_scale)
-                scaled_start_y = int(start_y_position * y_scale)
-                scaled_final_y = int(final_y_position * y_scale)
-                
-                print(f"🔧 坐标系统转换: 原始({subtitle_absolute_x}, {final_y_position}) -> 实际({scaled_subtitle_x}, {scaled_subtitle_y})")
-                print(f"🔧 缩放比例: X={x_scale:.3f}, Y={y_scale:.3f}")
-                logging.info(f"🔧 坐标系统转换: 原始({subtitle_absolute_x}, {final_y_position}) -> 实际({scaled_subtitle_x}, {scaled_subtitle_y})")
+                cmd = f"[{current_stream}][s1]overlay=x={scaled_subtitle_x}:y='if(lt(t,{entrance_duration}),{scaled_start_y}-({scaled_start_y}-{scaled_final_y})*t/{entrance_duration},{scaled_final_y})':shortest=0:format=auto[v{stream_index}]"
+                filter_complex_parts.append(cmd)
+                logging.info(f"  📝 添加PNG字幕叠加: {current_stream} + s1 -> v{stream_index}")
+                logging.info(f"    位置: x={scaled_subtitle_x}, y={scaled_final_y}")
+                logging.info(f"    随机位置: {random_position}")
+                current_stream = f"v{stream_index}"
+                stream_index += 1
             else:
-                # 如果无法获取视频信息，使用原始坐标
-                scaled_subtitle_x = subtitle_absolute_x
-                scaled_subtitle_y = final_y_position
-                scaled_start_y = start_y_position
-                scaled_final_y = final_y_position
-                print("⚠️ 无法获取视频信息，使用原始坐标")
-                logging.warning("⚠️ 无法获取视频信息，使用原始坐标")
-            
-            cmd = f"[{current_stream}][s1]overlay=x={scaled_subtitle_x}:y='if(lt(t,{entrance_duration}),{scaled_start_y}-({scaled_start_y}-{scaled_final_y})*t/{entrance_duration},{scaled_final_y})':shortest=0:format=auto[v{stream_index}]"
-            filter_complex_parts.append(cmd)
-            logging.info(f"  📝 添加字幕叠加: {current_stream} + s1 -> v{stream_index}")
-            logging.info(f"    位置: x={scaled_subtitle_x}, y={scaled_final_y}")
-            logging.info(f"    随机位置: {random_position}")
-            current_stream = f"v{stream_index}"
-            stream_index += 1
-        else:
-            if enable_subtitle:
-                logging.warning(f"  ⚠️ 字幕启用但subtitle_index为None或subtitle_img为None")
+                logging.warning(f"  ⚠️ 字幕启用但没有可用的字幕文件")
         
         # 检查是否有任何素材需要处理
         has_any_overlay = (enable_subtitle and subtitle_img) or (enable_background and bg_img) or (enable_image and has_image) or (enable_gif and has_gif)
         
         # 组合过滤器链，并确保最终输出端点正确设置
         if has_any_overlay:
-            # 确保最终输出有一个明确的标签[v]
-            if current_stream != "v1":
-                # 如果有叠加操作，将最终流标记为[v]
-                filter_complex_parts.append(f"[{current_stream}]null[v]")
-            else:
-                # 如果没有叠加操作，直接将基础视频流标记为[v]
-                filter_complex_parts.append("[v1]null[v]")
+             # 确保最终输出有一个明确的标签[v]
+             if current_stream != "v1" and current_stream != "v":
+                 # 如果有叠加操作且不是最终输出，将最终流标记为[v]
+                 filter_complex_parts.append(f"[{current_stream}]null[v]")
+             elif current_stream == "v1":
+                 # 如果没有叠加操作，直接将基础视频流标记为[v]
+                 filter_complex_parts.append("[v1]null[v]")
+             # 如果current_stream已经是"v"，则不需要添加null过滤器
         
         filter_complex = ";".join(filter_complex_parts)
         logging.info(f"  🔗 最终过滤器链: {filter_complex}")
@@ -1857,7 +2012,7 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             # 如果启用了音乐但没有指定音乐路径，则尝试使用默认音乐目录
             if not music_path:
                 # 尝试使用默认音乐目录
-                default_music_dir = get_data_path("input/music")
+                default_music_dir = get_data_path("music")
                 if Path(default_music_dir).exists():
                     music_extensions = ['.mp3', '.wav', '.m4a', '.aac', '.flac']
                     music_files = []
@@ -1899,23 +2054,16 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                             selected_music_path = str(random.choice(music_files))
                             print(f"【音乐处理】随机选择音乐: {selected_music_path}")
                         elif music_mode == "sequence":
-                            # 顺序模式：根据视频索引选择音乐文件
+                            # 顺序模式：直接根据视频索引选择音乐文件
                             # 确保索引不会超出范围
-                            global selected_music_index
-                            # 如果selected_music_index为None，初始化为0
-                            if selected_music_index is None:
-                                selected_music_index = 0
-                            # 使用视频索引更新音乐索引
-                            selected_music_index = (selected_music_index + 1) % len(music_files)
-                            # 或者直接使用视频索引
-                            # selected_music_index = video_index % len(music_files)
-                            selected_music_path = str(music_files[selected_music_index])
-                            print(f"【音乐处理】按顺序选择音乐: {selected_music_path} (索引: {selected_music_index}/{len(music_files)-1}, 视频索引: {video_index})")
+                            music_file_index = video_index % len(music_files)
+                            selected_music_path = str(music_files[music_file_index])
+                            print(f"【音乐处理】按顺序选择音乐: {selected_music_path} (音乐索引: {music_file_index}/{len(music_files)-1}, 视频索引: {video_index})")
                             
                             # 添加额外的调试信息
                             print(f"【音乐处理】调试信息 - 音乐文件列表:")
                             for idx, music_file in enumerate(music_files):
-                                marker = "<<< 选中" if idx == selected_music_index else ""
+                                marker = "<<< 选中" if idx == music_file_index else ""
                                 print(f"  [{idx}] {music_file.name} {marker}")
                         else:  # single模式，选择第一个
                             selected_music_path = str(music_files[0])
@@ -1937,6 +2085,23 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
         print(f"【音乐处理】最终选择的音乐路径: {selected_music_path}")
         if selected_music_path and Path(selected_music_path).exists():
             print(f"【音乐处理】音乐文件存在，大小: {Path(selected_music_path).stat().st_size} 字节")
+            
+            # 根据视频时长自动裁剪音乐
+            print(f"【音乐处理】开始根据视频时长裁剪音乐")
+            print(f"【音乐处理】视频时长: {duration}秒")
+            
+            # 创建临时裁剪音乐文件路径
+            trimmed_music_path = temp_dir / f"trimmed_music_{uuid.uuid4().hex[:8]}.mp3"
+            
+            # 调用音乐裁剪函数
+            trimmed_result = trim_music_to_video_duration(selected_music_path, duration, trimmed_music_path)
+            
+            if trimmed_result:
+                selected_music_path = trimmed_result
+                print(f"【音乐处理】音乐裁剪成功，使用裁剪后的音乐: {selected_music_path}")
+            else:
+                print(f"【音乐处理】音乐裁剪失败，使用原始音乐文件")
+                
         elif selected_music_path:
             print(f"【音乐处理】警告：音乐文件不存在！")
             print(f"【音乐处理】检查的路径: {selected_music_path}")
@@ -1968,6 +2133,7 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             print(f"【音乐处理】没有选择音乐文件")
         
         # 始终构建FFmpeg命令，确保音乐能够正确处理
+        # 修复：当启用音乐时，即使没有叠加素材也要进入FFmpeg处理逻辑
         if has_any_overlay or selected_music_path:
             
             # 解析质量设置参数
@@ -2040,40 +2206,44 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                     # 如果有叠加素材，视频流来自过滤器链
                     audio_params = [
                         '-map', '[v]',  # 映射过滤器链的视频输出
-                        '-map', f'{music_index}:a?',  # 映射音乐的音频流，?表示如果不存在则忽略
+                        '-map', f'{music_index}:a',  # 映射音乐的音频流
                         '-c:a', 'aac',
                         '-b:a', '128k',
                         '-af', f'volume={volume_ratio}',  # 调节音量
                         '-shortest'  # 以最短的流为准（视频结束时音频也结束）
                     ]
                     print(f"【音乐处理】叠加模式 - 视频流映射: [v]")
-                    print(f"【音乐处理】叠加模式 - 音频流映射: {music_index}:a?")
+                    print(f"【音乐处理】叠加模式 - 音频流映射: {music_index}:a")
                     ffmpeg_command.extend(audio_params)
                 else:
                     # 如果没有叠加素材，直接映射视频流
+                    # 使用实际记录的音乐索引，而不是重新计算
+                    music_input_index = music_index
+                    
                     audio_params = [
                         '-map', '0:v',  # 映射视频流
-                        '-map', f'{music_index}:a?',  # 映射音乐的音频流，?表示如果不存在则忽略
+                        '-map', f'{music_input_index}:a',  # 映射音乐的音频流
                         '-c:a', 'aac',
                         '-b:a', '128k',
                         '-af', f'volume={volume_ratio}',  # 调节音量
                         '-shortest'  # 以最短的流为准（视频结束时音频也结束）
                     ]
                     print(f"【音乐处理】直接模式 - 视频流映射: 0:v")
-                    print(f"【音乐处理】直接模式 - 音频流映射: {music_index}:a?")
+                    print(f"【音乐处理】直接模式 - 音频流映射: {music_input_index}:a (实际索引: {music_index})")
                     ffmpeg_command.extend(audio_params)
                 print(f"【音乐处理】添加音频编码参数，音量: {music_volume}%")
                 print(f"【音乐处理】音频参数: {audio_params}")
             else:
-                # 如果没有音乐，不包含音频
+                # 如果没有音乐，保留原视频的音频流
                 if has_any_overlay:
-                    # 如果有叠加素材，映射过滤器链的视频输出
-                    ffmpeg_command.extend(['-map', '[v]'])
+                    # 如果有叠加素材，映射过滤器链的视频输出和原视频的音频流
+                    ffmpeg_command.extend(['-map', '[v]', '-map', '0:a?'])
                 else:
-                    # 如果没有叠加素材，直接映射视频流
-                    ffmpeg_command.extend(['-map', '0:v'])
-                ffmpeg_command.extend(['-an'])
-                print(f"【音乐处理】没有音乐，移除音频轨道")
+                    # 如果没有叠加素材，直接映射视频流和音频流
+                    ffmpeg_command.extend(['-map', '0:v', '-map', '0:a?'])
+                # 保留原视频音频编码
+                ffmpeg_command.extend(['-c:a', 'copy'])
+                print(f"【音乐处理】没有音乐，保留原视频音频流")
             
             ffmpeg_command.append(str(output_with_subtitle))
             
@@ -2107,7 +2277,8 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             if not result:
                 print("添加素材失败，尝试使用备用方法")
                 if enable_subtitle and subtitle_img:
-                    return fallback_static_subtitle(video_path, subtitle_img, output_path, temp_dir, quicktime_compatible)
+                    return fallback_static_subtitle(video_path, subtitle_img, output_path, temp_dir, quicktime_compatible, 
+                                                   enable_music, selected_music_path, music_volume)
                 else:
                     print("没有字幕可用于备用方法，直接复制原视频")
                     # 直接复制原视频
@@ -2144,7 +2315,7 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                     '-b:a', '128k',
                     '-af', f'volume={volume_ratio}',
                     '-map', '0:v',  # 映射视频流
-                    '-map', '1:a?',  # 映射音频流，?表示如果不存在则忽略
+                    '-map', '1:a',   # 映射音频流，强制映射
                     '-shortest',
                     str(output_with_subtitle)
                 ]
@@ -2179,20 +2350,7 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             progress_callback("视频处理完成", 90.0)
             
         # 10. 添加QuickTime兼容性（如果需要）
-        final_cmd = [
-            'ffmpeg', '-y',
-            '-i', str(output_with_subtitle),
-            '-c', 'copy',
-            '-movflags', '+faststart',
-            str(output_path)
-        ]
-        
-        print(f"执行命令: {' '.join(final_cmd)}")
-        # 报告进度：最终转换
-        if progress_callback:
-            progress_callback("最终转换", 95.0)
-            
-        if run_ffmpeg_command(final_cmd):
+        if _apply_final_conversion(output_with_subtitle, output_path, progress_callback):
             print(f"成功添加字幕动画，输出到: {output_path}")
             # 报告进度：处理完成
             if progress_callback:
@@ -2245,7 +2403,8 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             logging.warning(f"清理临时文件时出错: {cleanup_error}")
 
 
-def fallback_static_subtitle(video_path, subtitle_img_path, output_path, temp_dir, quicktime_compatible=False):
+def fallback_static_subtitle(video_path, subtitle_img_path, output_path, temp_dir, quicktime_compatible=False, 
+                           enable_music=False, music_path="", music_volume=50):
     """
     静态字幕备用方案
     当动画字幕失败时使用
@@ -2256,6 +2415,9 @@ def fallback_static_subtitle(video_path, subtitle_img_path, output_path, temp_di
         output_path: 输出路径
         temp_dir: 临时目录
         quicktime_compatible: 是否生成QuickTime兼容的视频
+        enable_music: 是否启用背景音乐
+        music_path: 音乐文件路径
+        music_volume: 音乐音量(0-100)
     """
     print("使用静态字幕备用方案" + (", QuickTime兼容模式" if quicktime_compatible else ""))
     
@@ -2280,52 +2442,85 @@ def fallback_static_subtitle(video_path, subtitle_img_path, output_path, temp_di
         f"[v1][s1]overlay=x={x_position}:y={y_position}:shortest=0:format=auto"
     )
     
-    # 直接将字幕添加到视频上
-    cmd = [
-        'ffmpeg', '-y',
-        '-i', str(video_path),
-        '-i', str(subtitle_img_path),
-        '-filter_complex', filter_complex,
-        '-c:v', 'libx264',
-        '-pix_fmt', 'yuv420p',  # 确保输出格式是yuv420p
-        '-profile:v', 'main', '-level', '3.1',
-        '-preset', 'ultrafast',
-        '-movflags', '+faststart',
-    ]
+    # 处理音频
+    if enable_music and music_path and Path(music_path).exists():
+        print(f"【fallback音乐处理】添加背景音乐: {music_path}")
+        
+        # 根据视频时长自动裁剪音乐
+        print(f"【fallback音乐处理】开始根据视频时长裁剪音乐")
+        print(f"【fallback音乐处理】视频时长: {duration}秒")
+        
+        # 创建临时裁剪音乐文件路径
+        trimmed_music_path = temp_dir / f"fallback_trimmed_music_{uuid.uuid4().hex[:8]}.mp3"
+        
+        # 调用音乐裁剪函数
+        trimmed_result = trim_music_to_video_duration(music_path, duration, trimmed_music_path)
+        
+        if trimmed_result:
+            music_path = trimmed_result
+            print(f"【fallback音乐处理】音乐裁剪成功，使用裁剪后的音乐: {music_path}")
+        else:
+            print(f"【fallback音乐处理】音乐裁剪失败，使用原始音乐文件")
+        
+        volume_ratio = music_volume / 100.0
+        
+        # 构建包含音乐的FFmpeg命令
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', str(video_path),
+            '-i', str(subtitle_img_path),
+            '-i', str(music_path),
+            '-filter_complex', f'{filter_complex}[v];[2:a]volume={volume_ratio}[a]',
+            '-map', '[v]', '-map', '[a]',
+            '-c:v', 'libx264',
+            '-c:a', 'aac',  # 指定音频编码器
+            '-pix_fmt', 'yuv420p',
+            '-profile:v', 'main', '-level', '3.1',
+            '-preset', 'ultrafast',
+            '-movflags', '+faststart',
+        ]
+    else:
+        # 不包含音乐的FFmpeg命令 - 保留原视频音频流
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', str(video_path),
+            '-i', str(subtitle_img_path),
+            '-filter_complex', f'{filter_complex}[v]',
+            '-map', '[v]',   # 映射处理后的视频流
+            '-map', '0:a?',  # 保留原视频音频流（如果存在）
+            '-c:v', 'libx264',
+            '-c:a', 'copy',  # 复制原音频编码
+            '-pix_fmt', 'yuv420p',
+            '-profile:v', 'main', '-level', '3.1',
+            '-preset', 'ultrafast',
+            '-movflags', '+faststart',
+        ]
     
     # 添加QuickTime兼容性参数
     if quicktime_compatible:
         cmd.extend([
-            '-brand', 'mp42',  # 设置兼容的品牌标记
-            '-tag:v', 'avc1',  # 使用标准AVC标记
+            '-brand', 'mp42',
+            '-tag:v', 'avc1',
         ])
         print("应用静态字幕的QuickTime兼容性参数")
     
-    # 不要音频
-    cmd.extend(['-an', str(output_with_subtitle)])
+    # 添加输出文件路径
+    cmd.append(str(output_with_subtitle))
     
     if not run_ffmpeg_command(cmd):
         print("静态字幕添加失败")
         return None
     
     # 复制到最终输出路径
-    ensure_dir(Path(output_path).parent)
-    
-    # 使用ffmpeg复制整个视频，而不是简单的文件复制
-    copy_cmd = [
-        'ffmpeg', '-y',
-        '-i', str(output_with_subtitle),
-        '-c', 'copy',  # 使用复制模式，不重新编码
-        '-movflags', '+faststart',
-        str(output_path)
-    ]
-    
-    if not run_ffmpeg_command(copy_cmd):
+    if _apply_final_conversion(output_with_subtitle, output_path):
+        print(f"成功添加静态字幕，输出到: {output_path}")
+        return output_path
+    else:
         print(f"复制最终视频失败，尝试直接复制文件")
+        ensure_dir(Path(output_path).parent)
         shutil.copy2(output_with_subtitle, output_path)
-    
-    print(f"成功添加静态字幕，输出到: {output_path}")
-    return output_path
+        print(f"成功添加静态字幕，输出到: {output_path}")
+        return output_path
 
 
 def process_reverse_effect(video_path, output_path):

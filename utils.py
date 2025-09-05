@@ -236,8 +236,14 @@ def find_matching_image(video_name, image_dir="input/images", custom_image_path=
                 full_image_dir = str(current_dir_path)
                 print(f"使用当前目录图片目录: {full_image_dir}")
             else:
-                full_image_dir = get_data_path("input/images")
-                print(f"使用默认图片目录: {full_image_dir}")
+                # 尝试data/image目录（实际图片存放位置）
+                data_image_dir = get_data_path("image")
+                if Path(data_image_dir).exists():
+                    full_image_dir = str(data_image_dir)
+                    print(f"使用data/image目录: {full_image_dir}")
+                else:
+                    full_image_dir = get_data_path("input/images")
+                    print(f"使用默认图片目录: {full_image_dir}")
         
         print(f"最终图片目录路径: {full_image_dir}")
             

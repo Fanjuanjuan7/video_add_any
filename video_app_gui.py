@@ -21,8 +21,9 @@ try:
                                 QSpinBox, QDoubleSpinBox, QVBoxLayout, QHBoxLayout, QGridLayout, 
                                 QGroupBox, QMessageBox, QProgressBar, 
                                 QListWidget, QAbstractItemView, QSplitter, QSlider,
-                                QTextEdit)  # 添加QTextEdit导入
+                                QTextEdit, QColorDialog)  # 添加QTextEdit和QColorDialog导入
     from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSettings
+    from PyQt5.QtGui import QColor
     
 except ImportError as e:
     print(f"错误: {e}")
@@ -57,7 +58,9 @@ class ProcessingThread(QThread):
                  enable_background, enable_image, enable_music, music_path, music_mode, music_volume,
                  document_path=None, enable_gif=False, gif_path="", gif_loop_count=-1, 
                  gif_scale=1.0, gif_rotation=0, gif_x=800, gif_y=100, scale_factor=1.1, image_path=None, quality_settings=None,
-                 enable_tts=False, tts_voice="zh-CN-XiaoxiaoNeural", tts_volume=100, tts_text="", auto_match_duration=False):  # 添加TTS参数和auto_match_duration参数
+                 enable_tts=False, tts_voice="zh-CN-XiaoxiaoNeural", tts_volume=100, tts_text="", auto_match_duration=False,
+                 enable_dynamic_subtitle=False, animation_style="高亮放大", animation_intensity=1.5, highlight_color="#FFD700",
+                 match_mode="随机样式", position_x=50, position_y=50):  # 添加动态字幕参数
         super().__init__()
         # 分别存储不同类型的文件
         self.short_videos = short_videos  # 小于9秒的视频
@@ -104,6 +107,14 @@ class ProcessingThread(QThread):
         self.tts_text = tts_text  # 用户输入的固定TTS文本
         self.auto_match_duration = auto_match_duration  # 自动匹配视频时长
         self.user_document_path = document_path  # 保存用户指定的文档路径
+        # 动态字幕参数
+        self.enable_dynamic_subtitle = enable_dynamic_subtitle
+        self.animation_style = animation_style
+        self.animation_intensity = animation_intensity
+        self.highlight_color = highlight_color
+        self.match_mode = match_mode
+        self.position_x = position_x
+        self.position_y = position_y
     
     def run(self):
         import time
@@ -412,7 +423,14 @@ class ProcessingThread(QThread):
                             tts_voice=self.tts_voice,
                             tts_volume=self.tts_volume,
                             tts_text=current_tts_text,
-                            auto_match_duration=self.auto_match_duration
+                            auto_match_duration=self.auto_match_duration,
+                            enable_dynamic_subtitle=self.enable_dynamic_subtitle,
+                            animation_style=self.animation_style,
+                            animation_intensity=self.animation_intensity,
+                            highlight_color=self.highlight_color,
+                            match_mode=self.match_mode,
+                            position_x=self.position_x,
+                            position_y=self.position_y
                         )
                         
                         item_end_time = time.time()
@@ -1013,10 +1031,11 @@ class VideoProcessorApp(QMainWindow):
         left_layout.addWidget(output_group)
         left_layout.addStretch()
         
-        # 右侧：样式和高级设置（两列布局）
+        # 右侧：样式和高级设置（三列布局）
         right_widget = QWidget()
+        right_widget.setMinimumWidth(950)  # 增加最小宽度以容纳三列
         right_main_layout = QHBoxLayout(right_widget)
-        right_main_layout.setSpacing(15)
+        right_main_layout.setSpacing(12)
         right_main_layout.setContentsMargins(5, 5, 5, 5)
         
         # 左列
@@ -1024,6 +1043,12 @@ class VideoProcessorApp(QMainWindow):
         left_column_layout = QVBoxLayout(left_column)
         left_column_layout.setSpacing(12)
         left_column_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 中列
+        middle_column = QWidget()
+        middle_column_layout = QVBoxLayout(middle_column)
+        middle_column_layout.setSpacing(12)
+        middle_column_layout.setContentsMargins(0, 0, 0, 0)
         
         # 右列
         right_column = QWidget()
@@ -1070,6 +1095,7 @@ class VideoProcessorApp(QMainWindow):
         style_layout.addWidget(self.font_size, 2, 1)
         style_layout.addWidget(QLabel("字幕宽度:"), 3, 0)
         style_layout.addWidget(self.subtitle_width, 3, 1)
+        
         style_layout.addWidget(self.quicktime_check, 4, 0, 1, 2)
         
         style_group.setLayout(style_layout)
@@ -1373,13 +1399,82 @@ class VideoProcessorApp(QMainWindow):
         
         watermark_group.setLayout(watermark_layout)
         
-        # 添加组件到两列布局
+        # 动态字幕控制组（第三列）
+        dynamic_subtitle_group = QGroupBox("动态字幕控制")
+        dynamic_subtitle_group.setMinimumHeight(400)
+        dynamic_layout = QGridLayout()
+        dynamic_layout.setSpacing(8)
+        dynamic_layout.setContentsMargins(8, 8, 8, 8)
+        
+        # 启用动态字幕
+        self.enable_dynamic_subtitle = QCheckBox("启用动态字幕")
+        self.enable_dynamic_subtitle.setToolTip("启用后字幕将与TTS配音同步，当前朗读单词会有动画效果")
+        dynamic_layout.addWidget(self.enable_dynamic_subtitle, 0, 0, 1, 2)
+        
+        # 动画样式选择
+        self.animation_style = QComboBox()
+        self.animation_style.addItems(["高亮放大", "弹跳效果", "发光效果"])
+        self.animation_style.setToolTip("选择字幕动画样式")
+        dynamic_layout.addWidget(QLabel("动画样式:"), 1, 0)
+        dynamic_layout.addWidget(self.animation_style, 1, 1)
+        
+        # 动画强度
+        self.animation_intensity = QDoubleSpinBox()
+        self.animation_intensity.setRange(0.1, 3.0)
+        self.animation_intensity.setValue(1.5)
+        self.animation_intensity.setSingleStep(0.1)
+        self.animation_intensity.setToolTip("动画效果强度（1.0为正常，数值越大效果越明显）")
+        dynamic_layout.addWidget(QLabel("动画强度:"), 2, 0)
+        dynamic_layout.addWidget(self.animation_intensity, 2, 1)
+        
+        # 高亮颜色选择器
+        color_layout = QHBoxLayout()
+        self.highlight_color = QLineEdit("#FFD700")
+        self.highlight_color.setToolTip("当前朗读单词的高亮颜色")
+        self.highlight_color.setMaximumWidth(100)
+        self.color_picker_btn = QPushButton("选择颜色")
+        self.color_picker_btn.setMaximumWidth(80)
+        self.color_picker_btn.clicked.connect(self.open_color_picker)
+        color_layout.addWidget(self.highlight_color)
+        color_layout.addWidget(self.color_picker_btn)
+        dynamic_layout.addWidget(QLabel("高亮颜色:"), 3, 0)
+        dynamic_layout.addLayout(color_layout, 3, 1)
+        
+        # 匹配模式
+        self.subtitle_match_mode = QComboBox()
+        self.subtitle_match_mode.addItems(["随机样式", "循环样式", "指定样式"])
+        self.subtitle_match_mode.setToolTip("选择字幕样式匹配模式")
+        dynamic_layout.addWidget(QLabel("匹配模式:"), 4, 0)
+        dynamic_layout.addWidget(self.subtitle_match_mode, 4, 1)
+        
+        # 字幕位置设置
+        self.subtitle_pos_x = QSpinBox()
+        self.subtitle_pos_x.setRange(-9999, 9999)
+        self.subtitle_pos_x.setValue(640)
+        self.subtitle_pos_x.setToolTip("字幕X轴位置（像素）")
+        dynamic_layout.addWidget(QLabel("X坐标:"), 5, 0)
+        dynamic_layout.addWidget(self.subtitle_pos_x, 5, 1)
+        
+        self.subtitle_pos_y = QSpinBox()
+        self.subtitle_pos_y.setRange(-9999, 9999)
+        self.subtitle_pos_y.setValue(1000)
+        self.subtitle_pos_y.setToolTip("字幕Y轴位置（像素）")
+        dynamic_layout.addWidget(QLabel("Y坐标:"), 6, 0)
+        dynamic_layout.addWidget(self.subtitle_pos_y, 6, 1)
+        
+        dynamic_subtitle_group.setLayout(dynamic_layout)
+        
+        # 添加组件到三列布局
         # 左列：样式设置、图片设置、位置设置、去水印设置
         left_column_layout.addWidget(style_group)
         left_column_layout.addWidget(img_group)
         left_column_layout.addWidget(subtitle_pos_group)
         left_column_layout.addWidget(watermark_group)
         left_column_layout.addStretch()
+        
+        # 中列：动态字幕控制
+        middle_column_layout.addWidget(dynamic_subtitle_group)
+        middle_column_layout.addStretch()
         
         # 右列：背景设置、素材选择、音乐设置、GIF设置
         right_column_layout.addWidget(bg_group)
@@ -1388,8 +1483,9 @@ class VideoProcessorApp(QMainWindow):
         right_column_layout.addWidget(gif_group)
         right_column_layout.addStretch()
         
-        # 将两列添加到主要水平布局
+        # 将三列添加到主要水平布局
         right_main_layout.addWidget(left_column)
+        right_main_layout.addWidget(middle_column)
         right_main_layout.addWidget(right_column)
         
         # 将左右两侧添加到分栏器
@@ -1397,7 +1493,7 @@ class VideoProcessorApp(QMainWindow):
         splitter.addWidget(right_widget)
         
         # 设置分栏器初始大小
-        splitter.setSizes([350, 750])  # 调整比例以更好地利用空间
+        splitter.setSizes([350, 950])  # 调整比例以适应三列布局
         
         # 添加分栏器到主布局
         main_layout.addWidget(splitter)
@@ -2102,6 +2198,15 @@ class VideoProcessorApp(QMainWindow):
                 print(f"TTS设置: enable={enable_tts}, voice={tts_voice}, volume={tts_volume}, text='{tts_text}'")
         
         # 启动处理线程，传递分类后的文件列表
+        # 获取动态字幕参数
+        enable_dynamic_subtitle = self.enable_dynamic_subtitle.isChecked() if hasattr(self, 'enable_dynamic_subtitle') else False
+        animation_style = self.animation_style.currentText() if hasattr(self, 'animation_style') else "高亮放大"
+        animation_intensity = self.animation_intensity.value() if hasattr(self, 'animation_intensity') else 1.5
+        highlight_color = getattr(self, 'highlight_color_value', "#FFD700")
+        match_mode = self.match_mode.currentText() if hasattr(self, 'match_mode') else "随机样式"
+        position_x = self.position_x.value() if hasattr(self, 'position_x') else 50
+        position_y = self.position_y.value() if hasattr(self, 'position_y') else 50
+        
         self.processing_thread = ProcessingThread(
             short_videos, long_videos, folders, output_dir, style, lang,
             quicktime_compatible, img_position_x, img_position_y,
@@ -2112,7 +2217,9 @@ class VideoProcessorApp(QMainWindow):
             document_path, enable_gif, gif_path, gif_loop_count, gif_scale, self.gif_rotation.value(), gif_x, gif_y, scale_factor, image_path,
             quality_settings,  # 添加质量设置参数
             enable_tts, tts_voice, tts_volume, tts_text,  # 添加TTS参数
-            self.auto_match_duration.isChecked()  # 添加auto_match_duration参数
+            self.auto_match_duration.isChecked(),  # 添加auto_match_duration参数
+            enable_dynamic_subtitle, animation_style, animation_intensity, highlight_color,  # 添加动态字幕参数
+            match_mode, position_x, position_y  # 添加新的动态字幕参数
         )
         
         self.processing_thread.progress_updated.connect(self.update_progress)
@@ -2764,6 +2871,19 @@ class VideoProcessorApp(QMainWindow):
     def on_volume_changed(self, value):
         """处理音量滑块变化"""
         self.volume_label.setText(f"{value}%")
+    
+    def open_color_picker(self):
+        """打开颜色选择器"""
+        try:
+            current_color = QColor(self.highlight_color.text())
+            color = QColorDialog.getColor(current_color, self, "选择高亮颜色")
+            if color.isValid():
+                self.highlight_color.setText(color.name())
+        except Exception as e:
+            # 如果当前颜色格式无效，使用默认颜色
+            color = QColorDialog.getColor(QColor("#FFD700"), self, "选择高亮颜色")
+            if color.isValid():
+                self.highlight_color.setText(color.name())
     
     def populate_voice_languages(self):
         """填充语言选项（根据API平台）"""
