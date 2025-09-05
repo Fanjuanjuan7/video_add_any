@@ -84,6 +84,8 @@ def create_rounded_rect_background(width, height, radius, output_path, bg_color=
     except Exception as e:
         print(f"创建圆角矩形背景失败: {e}")
         return None
+
+
 import uuid
 from PIL import Image, ImageDraw, ImageFont
 
@@ -834,6 +836,7 @@ def add_tts_audio_to_video(video_path, audio_path, output_path, audio_volume=100
                 '-map', '0:v', '-map', '[aout]',
                 '-c:v', 'copy',  # 视频流直接复制，不重新编码
                 '-c:a', 'aac',   # 音频编码为AAC
+                '-b:a', '128k',  # 音频比特率
                 '-strict', 'experimental',
                 '-y',  # 覆盖输出文件
                 str(output_path)
@@ -847,6 +850,7 @@ def add_tts_audio_to_video(video_path, audio_path, output_path, audio_volume=100
                 '-map', '0:v', '-map', '[audio]',
                 '-c:v', 'copy',  # 视频流直接复制，不重新编码
                 '-c:a', 'aac',   # 音频编码为AAC
+                '-b:a', '128k',  # 音频比特率
                 '-strict', 'experimental',
                 '-y',  # 覆盖输出文件
                 str(output_path)
@@ -1568,105 +1572,39 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             print(f"ขนาดตัวอักษรที่ส่งไปยัง create_subtitle_image: {font_size}")
             
             # 检查是否使用动态字幕
+            # 检查是否使用动态字幕
             if enable_dynamic_subtitle and 'dynamic_processor' in locals():
                 print(f"[动态字幕] 使用动态字幕处理器生成字幕")
-                try:
-                    # 使用动态字幕处理器生成ASS字幕文件
-                    subtitle_ass_path = temp_dir / "subtitle.ass"
-                    subtitle_file = dynamic_processor.create_dynamic_subtitle(
-                        text=subtitle_text,
-                        width=subtitle_width,
-                        height=subtitle_height,
-                        font_size=font_size,
-                        output_path=str(subtitle_ass_path)
-                    )
-                    print(f"[动态字幕] 动态字幕生成成功: {subtitle_file}")
-                    # 标记使用ASS字幕
-                    use_ass_subtitle = True
-                    subtitle_img = subtitle_file
-                except Exception as e:
-                    print(f"[动态字幕] 动态字幕生成失败: {e}")
-                    # 回退到静态字幕
-                    subtitle_img = create_subtitle_image(
-                        subtitle_text, 
-                        style=style, 
-                        width=subtitle_width, 
-                        height=subtitle_height, 
-                        font_size=font_size,
-                        output_path=str(subtitle_img_path)
-                    )
-                    print(f"[动态字幕] 回退到静态字幕: {subtitle_img}")
-                    use_ass_subtitle = False
-            else:
-                # 使用静态字幕
-                print(f"[字幕] 使用静态字幕生成")
-                subtitle_img = create_subtitle_image(
-                    subtitle_text, 
-                    style=style, 
-                    width=subtitle_width, 
-                    height=subtitle_height, 
+                # 使用动态字幕处理器生成字幕图片
+                subtitle_img = dynamic_processor.create_dynamic_subtitle(
+                    text=subtitle_text,
+                    width=subtitle_width,
+                    height=subtitle_height,
                     font_size=font_size,
                     output_path=str(subtitle_img_path)
                 )
-                print(f"[字幕] 静态字幕生成: {subtitle_img}")
-                use_ass_subtitle = False
-            
-            # ใช้พารามิเตอร์ขนาดตัวอักษรที่ส่งมาแทนการกำหนดขนาดตัวอักษรโดยตรง
-            # ปรับความกว้างของภาพตัวอักษรให้ตรงกับความกว้างของข้อความตัวอักษร ไม่ใช่ความกว้างของวิดีโอ เพื่อป้องกันการคำนวณตำแหน่งผิดพลาด
-            subtitle_img = create_subtitle_image(
-                text=subtitle_text,
-                style=style,
-                width=subtitle_width + 100,  # ใช้ความกว้างของข้อความตัวอักษร+ขอบ แทนความกว้างของวิดีโอ
-                height=subtitle_height,
-                font_size=font_size,
-                output_path=str(subtitle_img_path),
-                subtitle_width=subtitle_width  # ส่งพารามิเตอร์ความกว้างของข้อความตัวอักษร
-            )
-            
-            # ตรวจสอบผลการสร้างภาพตัวอักษร
-            if subtitle_img:
-                print(f"สร้างภาพตัวอักษรสำเร็จ ตำแหน่ง: {subtitle_img}")
             else:
-                print("คำเตือน: ไม่สามารถสร้างภาพตัวอักษรได้")
-                return None
-        else:
-            print("ปิดใช้งานฟังก์ชันตัวอักษร ข้ามการสร้างภาพตัวอักษร")
-        
-        # รายงานความคืบหน้า: ประมวลผลตัวอักษรเสร็จสิ้น
-        if progress_callback:
-            progress_callback("ประมวลผลตัวอักษรเสร็จสิ้น", 40.0)
-            
-        # 9. 处理พื้นหลัง (หากเปิดใช้งานพื้นหลัง)
-        sample_frame = None
-        bg_img = None
-        
-        if enable_background:
-            # ดึงเฟรมวิดีโอเพื่อใช้ในการเลือกสี
-            sample_frame_path = temp_dir / "sample_frame.jpg"
-            
-            # ดึงเฟรมจากจุดกลางของวิดีโอ หรือจุดที่ไม่เกิน 5 วินาที
-            middle_time = min(duration / 2, 5.0)  # จุดกลางของวิดีโอ หรือไม่เกิน 5 วินาที
-            
-            sample_frame_cmd = [
-                'ffmpeg', '-y',
-                '-i', str(video_path),
-                '-ss', str(middle_time),  # ใช้รูปแบบวินาที แทนรูปแบบชั่วโมง:นาที:วินาที
-                '-vframes', '1',
-                '-q:v', '1',
-                str(sample_frame_path)
-            ]
-            
-            try:
-                print(f"【背景颜色】从视频 {middle_time:.2f} 秒位置提取帧用于取色")
-                subprocess.run(sample_frame_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                sample_frame = Image.open(str(sample_frame_path))
-                print(f"【背景颜色】成功提取视频帧用于取色: {sample_frame_path}")
-            except Exception as e:
-                print(f"【背景颜色】提取视频帧失败: {e}")
+                # 使用静态字幕生成
+                print(f"[字幕] 使用静态字幕生成")
+                print(f"[字幕] 字幕文本: {subtitle_text}")
+                print(f"[字幕] 字体大小: {font_size}")
+                print(f"[字幕] 样式: {style}")
+                
+                subtitle_img = create_subtitle_image(
+                    text=subtitle_text,
+                    style=style,
+                    width=subtitle_width,
+                    height=subtitle_height,
+                    font_size=font_size,
+                    output_path=str(subtitle_img_path)
+                )
             
             # 创建圆角矩形透明背景，使用自定义尺寸
             bg_img_path = temp_dir / "background.png"
             bg_radius = 20   # 圆角半径
+            
+            # 初始化sample_frame变量
+            sample_frame = None
             
             # 使用视频帧取色创建背景
             print("【背景颜色】开始创建圆角矩形背景，使用视频帧取色")
@@ -1862,6 +1800,10 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             
         # 叠加字幕（如果启用）
         if enable_subtitle:
+            # 初始化ASS字幕相关变量
+            use_ass_subtitle = False
+            subtitle_ass_path = None
+            
             if use_ass_subtitle and subtitle_ass_path:
                 # 使用ASS字幕文件
                 # ASS字幕不需要作为输入流，直接在过滤器中使用
@@ -1930,6 +1872,10 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                  # 如果没有叠加操作，直接将基础视频流标记为[v]
                  filter_complex_parts.append("[v1]null[v]")
              # 如果current_stream已经是"v"，则不需要添加null过滤器
+        else:
+            # 如果没有任何叠加操作，确保有一个[v]标签
+            if current_stream != "v":
+                filter_complex_parts.append(f"[{current_stream}]null[v]")
         
         filter_complex = ";".join(filter_complex_parts)
         logging.info(f"  🔗 最终过滤器链: {filter_complex}")
@@ -2206,7 +2152,7 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                     # 如果有叠加素材，视频流来自过滤器链
                     audio_params = [
                         '-map', '[v]',  # 映射过滤器链的视频输出
-                        '-map', f'{music_index}:a',  # 映射音乐的音频流
+                        '-map', f'{music_index}:a?',  # 映射音乐的音频流，使用可选映射避免错误
                         '-c:a', 'aac',
                         '-b:a', '128k',
                         '-af', f'volume={volume_ratio}',  # 调节音量
@@ -2222,7 +2168,7 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                     
                     audio_params = [
                         '-map', '0:v',  # 映射视频流
-                        '-map', f'{music_input_index}:a',  # 映射音乐的音频流
+                        '-map', f'{music_input_index}:a?',  # 映射音乐的音频流，使用可选映射避免错误
                         '-c:a', 'aac',
                         '-b:a', '128k',
                         '-af', f'volume={volume_ratio}',  # 调节音量
@@ -2315,7 +2261,7 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                     '-b:a', '128k',
                     '-af', f'volume={volume_ratio}',
                     '-map', '0:v',  # 映射视频流
-                    '-map', '1:a',   # 映射音频流，强制映射
+                    '-map', '1:a?',   # 映射音频流，使用可选映射避免错误
                     '-shortest',
                     str(output_with_subtitle)
                 ]
@@ -2439,7 +2385,7 @@ def fallback_static_subtitle(video_path, subtitle_img_path, output_path, temp_di
     filter_complex = (
         f"[0:v]trim=duration={duration}[v1];"
         f"[1:v]format=rgba[s1];"
-        f"[v1][s1]overlay=x={x_position}:y={y_position}:shortest=0:format=auto"
+        f"[v1][s1]overlay=x={x_position}:y={y_position}:shortest=0:format=auto[vout]"
     )
     
     # 处理音频
@@ -2470,10 +2416,11 @@ def fallback_static_subtitle(video_path, subtitle_img_path, output_path, temp_di
             '-i', str(video_path),
             '-i', str(subtitle_img_path),
             '-i', str(music_path),
-            '-filter_complex', f'{filter_complex}[v];[2:a]volume={volume_ratio}[a]',
-            '-map', '[v]', '-map', '[a]',
+            '-filter_complex', filter_complex,
+            '-map', '[v]', '-map', '2:a',
             '-c:v', 'libx264',
             '-c:a', 'aac',  # 指定音频编码器
+            '-af', f'volume={volume_ratio}',  # 音量调节
             '-pix_fmt', 'yuv420p',
             '-profile:v', 'main', '-level', '3.1',
             '-preset', 'ultrafast',
@@ -3073,6 +3020,15 @@ def process_image_for_overlay(image_path, output_path, size=(420, 420)):
         import traceback
         traceback.print_exc()
         return None
+
+
+
+
+
+
+
+
+
 
 
 def create_subtitle_image(text, style=None, width=1080, height=500, font_size=70, 
