@@ -17,7 +17,7 @@ import logging
 import asyncio
 
 # 导入工具函数
-from utils import get_video_info, run_ffmpeg_command, get_data_path, ensure_dir, load_style_config, find_font_file, find_matching_image, generate_tts_audio, load_subtitle_config
+from utils import get_video_info, get_audio_duration, run_ffmpeg_command, get_data_path, ensure_dir, load_style_config, find_font_file, find_matching_image, generate_tts_audio, load_subtitle_config
 
 # 导入日志管理器
 from log_manager import init_logging, log_with_capture
@@ -108,7 +108,7 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
                  gif_path="", gif_loop_count=-1, gif_scale=1.0, gif_rotation=0, gif_x=800, gif_y=100, scale_factor=1.1, 
                  image_path=None, subtitle_width=800, quality_settings=None, progress_callback=None,
                  video_index=0, enable_tts=False, tts_voice="zh-CN-XiaoxiaoNeural", 
-                 tts_volume=100, tts_text=""):  # 添加TTS相关参数
+                 tts_volume=100, tts_text="", auto_match_duration=False):  # 添加TTS相关参数和自动匹配时长参数
     """
     处理视频的主函数（精处理阶段）
     
@@ -131,12 +131,37 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
         tts_voice: TTS语音
         tts_volume: TTS音量（百分比）
         tts_text: TTS文本
+        auto_match_duration: 是否自动匹配视频时长（根据视频时长和配音时长计算变速系数）
         
     返回:
         处理后的视频路径，失败返回None
     """
     print(f"开始精处理视频: {video_path}")
     print(f"图片位置设置: 水平={img_position_x}（宽度比例）, 垂直={img_position_y}（像素偏移）")
+    
+    # 添加背景音乐详细日志 - process_video函数接收参数阶段
+    print(f"[背景音乐日志] process_video函数接收参数:")
+    print(f"  - 视频路径: {video_path}")
+    print(f"  - 输出路径: {output_path}")
+    print(f"  - 视频索引: {video_index}")
+    print(f"  - 启用背景音乐: {enable_music}")
+    print(f"  - 音乐路径: '{music_path}'")
+    print(f"  - 音乐模式: {music_mode}")
+    print(f"  - 音乐音量: {music_volume}%")
+    
+    # 验证音乐文件路径
+    if enable_music:
+        if not music_path:
+            print(f"[背景音乐日志] process_video警告: 启用了背景音乐但音乐路径为空")
+        else:
+            music_file_path = Path(music_path)
+            if music_file_path.exists():
+                print(f"[背景音乐日志] process_video确认音乐文件存在: {music_file_path.absolute()}")
+                print(f"[背景音乐日志] 音乐文件大小: {music_file_path.stat().st_size} 字节")
+            else:
+                print(f"[背景音乐日志] process_video错误: 音乐文件不存在: {music_file_path.absolute()}")
+    else:
+        print(f"[背景音乐日志] process_video: 背景音乐功能未启用")
     
     # 如果未指定输出路径，则生成一个
     if not output_path:
@@ -178,6 +203,64 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
                 # 检查生成的音频文件是否存在且不为空
                 if tts_audio_path.exists() and tts_audio_path.stat().st_size > 0:
                     print(f"TTS音频文件验证成功: {tts_audio_path}")
+                    
+                    # 如果启用了自动匹配时长，计算并应用变速系数
+                    if auto_match_duration:
+                        print("[自动匹配时长] 开始计算变速系数...")
+                        audio_duration = get_audio_duration(str(tts_audio_path))
+                        if audio_duration and audio_duration > 0:
+                            # 计算变速系数：音频时长 / 视频时长
+                            speed_ratio = audio_duration / duration
+                            print(f"[自动匹配时长] 视频时长: {duration}秒, 配音时长: {audio_duration}秒")
+                            print(f"[自动匹配时长] 计算变速系数: {speed_ratio:.3f}")
+                            
+                            # 如果变速系数不等于1，应用变速处理
+                            if abs(speed_ratio - 1.0) > 0.01:  # 允许1%的误差
+                                print(f"[自动匹配时长] 应用变速处理，系数: {speed_ratio:.3f}")
+                                adjusted_audio_path = temp_dir / "tts_audio_adjusted.mp3"
+                                
+                                # 使用FFmpeg的atempo滤镜调整音频速度
+                                # atempo的有效范围是0.5-100，如果超出范围需要多次应用
+                                tempo_cmd = ['ffmpeg', '-y', '-i', str(tts_audio_path)]
+                                
+                                # 构建atempo滤镜链
+                                filter_parts = []
+                                remaining_ratio = speed_ratio
+                                
+                                while remaining_ratio > 2.0:
+                                    filter_parts.append('atempo=2.0')
+                                    remaining_ratio /= 2.0
+                                while remaining_ratio < 0.5:
+                                    filter_parts.append('atempo=0.5')
+                                    remaining_ratio /= 0.5
+                                
+                                if remaining_ratio != 1.0:
+                                    filter_parts.append(f'atempo={remaining_ratio:.3f}')
+                                
+                                if filter_parts:
+                                    filter_complex = ','.join(filter_parts)
+                                    tempo_cmd.extend(['-filter:a', filter_complex])
+                                
+                                tempo_cmd.extend(['-c:a', 'mp3', str(adjusted_audio_path)])
+                                
+                                print(f"[自动匹配时长] 执行变速命令: {' '.join(tempo_cmd)}")
+                                if run_ffmpeg_command(tempo_cmd):
+                                    if adjusted_audio_path.exists() and adjusted_audio_path.stat().st_size > 0:
+                                        tts_audio_path = adjusted_audio_path
+                                        print(f"[自动匹配时长] 变速处理成功: {tts_audio_path}")
+                                        
+                                        # 验证调整后的音频时长
+                                        new_duration = get_audio_duration(str(tts_audio_path))
+                                        if new_duration:
+                                            print(f"[自动匹配时长] 调整后音频时长: {new_duration:.2f}秒")
+                                    else:
+                                        print("[自动匹配时长] 变速处理失败，使用原始音频")
+                                else:
+                                    print("[自动匹配时长] 变速命令执行失败，使用原始音频")
+                            else:
+                                print(f"[自动匹配时长] 变速系数接近1.0，无需调整")
+                        else:
+                            print("[自动匹配时长] 无法获取音频时长，跳过变速处理")
                 else:
                     print("TTS音频文件不存在或为空")
                     tts_audio_path = None
@@ -186,6 +269,13 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
                 tts_audio_path = None
         
         # 3. 添加字幕和其他效果，传递所有参数
+        print(f"[背景音乐日志] process_video调用add_subtitle_to_video前:")
+        print(f"  - 传递enable_music: {enable_music}")
+        print(f"  - 传递music_path: '{music_path}'")
+        print(f"  - 传递music_mode: {music_mode}")
+        print(f"  - 传递music_volume: {music_volume}")
+        print(f"  - 视频索引: {video_index}")
+        
         final_path = add_subtitle_to_video(
             processed_path, 
             output_path, 
@@ -590,8 +680,8 @@ def process_animated_gif_for_video(gif_path, temp_dir, scale_factor=1.0, loop_co
         # 添加旋转过滤器（总是添加以确保正确方向）
         # FFmpeg的rotate滤镜是逆时针旋转，需要取负值来实现顺时针旋转
         # 将角度转换为弧度，并取负值
-        # 对于0度，我们需要添加一个基础旋转来纠正原始GIF的方向
-        base_rotation = -45  # 基础旋转角度，用于纠正原始GIF指向右上角的问题
+        # 只有在UI中调整了参数时才应用旋转角度
+        base_rotation = 0  # 不再使用基础旋转角度，只使用用户设置的旋转角度
         actual_rotation = base_rotation + gif_rotation
         rotation_radians = -actual_rotation * 3.14159265359 / 180
         filters.append(f"rotate={rotation_radians}:fillcolor=none:bilinear=0")
@@ -669,9 +759,10 @@ def add_tts_audio_to_video(video_path, audio_path, output_path, audio_volume=100
         
         if has_audio:
             # 视频有音频流，混合音频
+            # 使用amix滤镜混合背景音乐和TTS音频，确保两者都能听到
             cmd = [
                 'ffmpeg', '-y', '-i', str(video_path), '-i', str(audio_path),
-                '-filter_complex', f'[1:a]{audio_volume_filter}[audio];[0:a][audio]amix=inputs=2:duration=first[aout]',
+                '-filter_complex', f'[1:a]{audio_volume_filter}[tts_audio];[0:a][tts_audio]amix=inputs=2:duration=first:weights=1 1[aout]',
                 '-map', '0:v', '-map', '[aout]',
                 '-c:v', 'copy',  # 视频流直接复制，不重新编码
                 '-c:a', 'aac',   # 音频编码为AAC
@@ -679,6 +770,7 @@ def add_tts_audio_to_video(video_path, audio_path, output_path, audio_volume=100
                 '-y',  # 覆盖输出文件
                 str(output_path)
             ]
+            print(f"[TTS音频处理] 检测到视频已有音频流（可能包含背景音乐），使用amix混合TTS和现有音频")
         else:
             # 视频没有音频流，直接添加TTS音频
             cmd = [
@@ -817,6 +909,30 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
     print(f"使用临时目录: {temp_dir}")
     
     try:
+        # 添加背景音乐详细日志 - add_subtitle_to_video函数接收参数阶段
+        print(f"[背景音乐日志] add_subtitle_to_video函数接收参数:")
+        print(f"  - 视频路径: {video_path}")
+        print(f"  - 输出路径: {output_path}")
+        print(f"  - 视频索引: {video_index}")
+        print(f"  - 启用背景音乐: {enable_music}")
+        print(f"  - 音乐路径: '{music_path}'")
+        print(f"  - 音乐模式: {music_mode}")
+        print(f"  - 音乐音量: {music_volume}%")
+        
+        # 验证音乐文件路径
+        if enable_music:
+            if not music_path:
+                print(f"[背景音乐日志] add_subtitle_to_video警告: 启用了背景音乐但音乐路径为空")
+            else:
+                music_file_path = Path(music_path)
+                if music_file_path.exists():
+                    print(f"[背景音乐日志] add_subtitle_to_video确认音乐文件存在: {music_file_path.absolute()}")
+                    print(f"[背景音乐日志] 音乐文件大小: {music_file_path.stat().st_size} 字节")
+                else:
+                    print(f"[背景音乐日志] add_subtitle_to_video错误: 音乐文件不存在: {music_file_path.absolute()}")
+        else:
+            print(f"[背景音乐日志] add_subtitle_to_video: 背景音乐功能未启用")
+        
         # 报告进度：开始处理
         if progress_callback:
             progress_callback("开始处理视频", 5.0)

@@ -403,6 +403,40 @@ def run_ffmpeg_command(command, quiet=False):
         return False
 
 
+def get_audio_duration(audio_path):
+    """
+    获取音频时长
+    
+    参数:
+        audio_path: 音频文件路径
+    
+    返回:
+        float: 音频时长（秒），失败返回None
+    """
+    try:
+        # 获取音频时长
+        duration_cmd = [
+            "ffprobe", "-v", "error", "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1", str(audio_path)
+        ]
+        duration_str = subprocess.check_output(duration_cmd).decode("utf-8").strip()
+        
+        # 确保获取到有效的时长值
+        try:
+            duration = float(duration_str)
+            if duration <= 0:
+                print(f"警告: 检测到无效的音频时长 ({duration}秒)")
+                return None
+            return duration
+        except ValueError:
+            print(f"无法解析音频时长字符串: '{duration_str}'")
+            return None
+            
+    except Exception as e:
+        print(f"获取音频时长失败: {e}")
+        return None
+
+
 def get_video_info(video_path):
     """
     获取视频信息(宽度、高度、时长)

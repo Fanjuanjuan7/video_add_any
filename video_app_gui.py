@@ -57,7 +57,7 @@ class ProcessingThread(QThread):
                  enable_background, enable_image, enable_music, music_path, music_mode, music_volume,
                  document_path=None, enable_gif=False, gif_path="", gif_loop_count=-1, 
                  gif_scale=1.0, gif_rotation=0, gif_x=800, gif_y=100, scale_factor=1.1, image_path=None, quality_settings=None,
-                 enable_tts=False, tts_voice="zh-CN-XiaoxiaoNeural", tts_volume=100, tts_text=""):  # 添加TTS参数
+                 enable_tts=False, tts_voice="zh-CN-XiaoxiaoNeural", tts_volume=100, tts_text="", auto_match_duration=False):  # 添加TTS参数和auto_match_duration参数
         super().__init__()
         # 分别存储不同类型的文件
         self.short_videos = short_videos  # 小于9秒的视频
@@ -102,6 +102,7 @@ class ProcessingThread(QThread):
         self.tts_voice = tts_voice
         self.tts_volume = tts_volume
         self.tts_text = tts_text  # 用户输入的固定TTS文本
+        self.auto_match_duration = auto_match_duration  # 自动匹配视频时长
         self.user_document_path = document_path  # 保存用户指定的文档路径
     
     def run(self):
@@ -353,7 +354,22 @@ class ProcessingThread(QThread):
                         # 获取音乐模式的实际值
                         music_mode_value = self.music_mode
                         print(f"调用process_video进行精处理，视频索引: {i}")
-                        print(f"音乐参数: enable_music={self.enable_music}, music_path={self.music_path}, music_mode={music_mode_value}, music_volume={self.music_volume}")
+                        
+                        # 添加背景音乐详细日志 - ProcessingThread传递阶段
+                        print(f"[背景音乐日志] ProcessingThread传递参数给process_video:")
+                        print(f"  - 视频索引: {i}")
+                        print(f"  - 启用背景音乐: {self.enable_music}")
+                        print(f"  - 音乐路径: '{self.music_path}'")
+                        print(f"  - 音乐模式: {music_mode_value}")
+                        print(f"  - 音乐音量: {self.music_volume}%")
+                        
+                        # 再次验证音乐文件路径
+                        if self.enable_music and self.music_path:
+                            music_file_path = Path(self.music_path)
+                            if music_file_path.exists():
+                                print(f"[背景音乐日志] ProcessingThread确认音乐文件存在: {music_file_path.absolute()}")
+                            else:
+                                print(f"[背景音乐日志] ProcessingThread警告: 音乐文件不存在: {music_file_path.absolute()}")
                         result = process_video(
                             preprocessed_path, 
                             str(output_path),
@@ -395,7 +411,8 @@ class ProcessingThread(QThread):
                             enable_tts=self.enable_tts,
                             tts_voice=self.tts_voice,
                             tts_volume=self.tts_volume,
-                            tts_text=current_tts_text
+                            tts_text=current_tts_text,
+                            auto_match_duration=self.auto_match_duration
                         )
                         
                         item_end_time = time.time()
@@ -1493,6 +1510,10 @@ class VideoProcessorApp(QMainWindow):
         voice_layout.setSpacing(3)  # 减少智能配音组间距
         voice_layout.setContentsMargins(5, 5, 5, 5)  # 减少智能配音组边距
         
+        # 设置列间距，前两列和后两列间隔30px
+        voice_layout.setColumnMinimumWidth(1, 30)  # 第1列和第2列之间的间距
+        voice_layout.setColumnMinimumWidth(3, 30)  # 第3列和第4列之间的间距
+        
         # API平台选择
         self.voice_api_combo = QComboBox()
         self.voice_api_combo.addItem("OpenAI-Edge-TTS", "edge_tts")
@@ -1515,43 +1536,45 @@ class VideoProcessorApp(QMainWindow):
         self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.api_key_input.setPlaceholderText("输入API Key")
         
-        api_test_btn = QPushButton("测试连接")
-        api_test_btn.clicked.connect(self.test_api_connection)
-        api_test_btn.setMaximumWidth(100)  # 限制按钮宽度
-        
         voice_layout.addWidget(QLabel("API Key:"), 1, 0)
         voice_layout.addWidget(self.api_key_input, 1, 1)
-        voice_layout.addWidget(api_test_btn, 1, 2)
         
         # 音色选择
         self.voice_type_combo = QComboBox()
         self.populate_voice_types()  # 填充音色选项
         
-        voice_layout.addWidget(QLabel("音色:"), 1, 3)
-        voice_layout.addWidget(self.voice_type_combo, 2, 0)
+        voice_layout.addWidget(QLabel("音色:"), 1, 2)
+        voice_layout.addWidget(self.voice_type_combo, 1, 3)
         
         # 性别选择
         self.voice_gender_combo = QComboBox()
         self.voice_gender_combo.addItem("男声", "male")
         self.voice_gender_combo.addItem("女声", "female")
         
-        voice_layout.addWidget(QLabel("性别:"), 2, 1)
-        voice_layout.addWidget(self.voice_gender_combo, 2, 2)
+        voice_layout.addWidget(QLabel("性别:"), 2, 0)
+        voice_layout.addWidget(self.voice_gender_combo, 2, 1)
         
         # 自动匹配视频时长
         self.auto_match_duration = QCheckBox("自动匹配视频时长")
         self.auto_match_duration.setChecked(True)
-        self.auto_match_duration.setToolTip("勾选后会通过调节播放速度使音频时长与视频一致")
+        self.auto_match_duration.setToolTip("勾选后会检测视频时长和配音时长，根据视频时长换算配音变速系数以匹配视频时长")
         
-        voice_layout.addWidget(self.auto_match_duration, 2, 3)
+        voice_layout.addWidget(self.auto_match_duration, 2, 2, 1, 2)  # 跨两列显示
+        
+        # 测试连接按钮
+        api_test_btn = QPushButton("测试连接")
+        api_test_btn.clicked.connect(self.test_api_connection)
+        api_test_btn.setMaximumWidth(100)  # 限制按钮宽度
+        
+        voice_layout.addWidget(api_test_btn, 3, 0)
         
         # TTS文本输入
         self.tts_text_input = QTextEdit()
         self.tts_text_input.setMaximumHeight(60)
         self.tts_text_input.setPlaceholderText("输入要转换为语音的文本内容")
         
-        voice_layout.addWidget(QLabel("TTS文本:"), 3, 0)
-        voice_layout.addWidget(self.tts_text_input, 3, 1, 1, 3)
+        voice_layout.addWidget(QLabel("TTS文本:"), 4, 0)
+        voice_layout.addWidget(self.tts_text_input, 4, 1, 1, 3)
         
         # TTS音量控制
         tts_volume_layout = QHBoxLayout()
@@ -1566,8 +1589,8 @@ class VideoProcessorApp(QMainWindow):
         tts_volume_layout.addWidget(self.tts_volume_slider)
         tts_volume_layout.addWidget(self.tts_volume_label)
         
-        voice_layout.addWidget(QLabel("TTS音量:"), 4, 0)
-        voice_layout.addLayout(tts_volume_layout, 4, 1, 1, 3)
+        voice_layout.addWidget(QLabel("TTS音量:"), 5, 0)
+        voice_layout.addLayout(tts_volume_layout, 5, 1, 1, 3)
         
         voice_group.setLayout(voice_layout)
         
@@ -1982,9 +2005,30 @@ class VideoProcessorApp(QMainWindow):
         
         # 获取音乐参数
         enable_music = self.enable_music.isChecked()
-        music_path = self.music_path.text()
+        music_path = self.music_path.text().strip()
         music_mode = self.music_mode.currentData()
         music_volume = self.music_volume.value()
+        
+        # 添加背景音乐详细日志
+        print(f"[背景音乐日志] UI参数获取:")
+        print(f"  - 启用背景音乐: {enable_music}")
+        print(f"  - 音乐路径: '{music_path}'")
+        print(f"  - 音乐模式: {music_mode}")
+        print(f"  - 音乐音量: {music_volume}%")
+        
+        # 检查音乐文件路径有效性
+        if enable_music:
+            if not music_path:
+                print(f"[背景音乐日志] 警告: 启用了背景音乐但未设置音乐路径")
+            else:
+                music_path_obj = Path(music_path)
+                if music_path_obj.exists():
+                    print(f"[背景音乐日志] 音乐文件存在: {music_path_obj.absolute()}")
+                    print(f"[背景音乐日志] 文件大小: {music_path_obj.stat().st_size} 字节")
+                else:
+                    print(f"[背景音乐日志] 错误: 音乐文件不存在: {music_path_obj.absolute()}")
+        else:
+            print(f"[背景音乐日志] 背景音乐功能未启用")
         
         # 获取文档路径
         document_path = self.document_path.text().strip() if hasattr(self, 'document_path') and self.document_path.text().strip() else None
@@ -2059,7 +2103,7 @@ class VideoProcessorApp(QMainWindow):
         
         # 启动处理线程，传递分类后的文件列表
         self.processing_thread = ProcessingThread(
-            short_videos, long_videos, folders, output_dir, style, lang, 
+            short_videos, long_videos, folders, output_dir, style, lang,
             quicktime_compatible, img_position_x, img_position_y,
             font_size, subtitle_width, subtitle_x, subtitle_y, bg_width, bg_height, img_size,
             self.subtitle_text_x.value(), self.subtitle_text_y.value(),
@@ -2067,7 +2111,8 @@ class VideoProcessorApp(QMainWindow):
             enable_music, music_path, music_mode, music_volume,
             document_path, enable_gif, gif_path, gif_loop_count, gif_scale, self.gif_rotation.value(), gif_x, gif_y, scale_factor, image_path,
             quality_settings,  # 添加质量设置参数
-            enable_tts, tts_voice, tts_volume, tts_text  # 添加TTS参数
+            enable_tts, tts_voice, tts_volume, tts_text,  # 添加TTS参数
+            self.auto_match_duration.isChecked()  # 添加auto_match_duration参数
         )
         
         self.processing_thread.progress_updated.connect(self.update_progress)
