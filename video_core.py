@@ -167,7 +167,7 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
                  enable_background=True, enable_image=True, enable_music=False, music_path="",
                  music_mode="single", music_volume=50, document_path=None, enable_gif=False, 
                  gif_path="", gif_loop_count=-1, gif_scale=1.0, gif_rotation=0, gif_x=800, gif_y=100, scale_factor=1.1, 
-                 image_path=None, subtitle_width=800, quality_settings=None, progress_callback=None,
+                 image_path=None, subtitle_width=500, quality_settings=None, progress_callback=None,
                  video_index=0, enable_tts=False, tts_voice="zh-CN-XiaoxiaoNeural", 
                  tts_volume=100, tts_text="", auto_match_duration=False,
                  enable_dynamic_subtitle=False, animation_style="高亮放大", animation_intensity=1.5, highlight_color="#FFD700",
@@ -946,7 +946,7 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                         enable_background=True, enable_image=True, enable_music=False, music_path="",
                         music_mode="single", music_volume=50, document_path=None, enable_gif=False, 
                         gif_path="", gif_loop_count=-1, gif_scale=1.0, gif_rotation=0, gif_x=800, gif_y=100, scale_factor=1.1, 
-                        image_path=None, subtitle_width=800, quality_settings=None, progress_callback=None,
+                        image_path=None, subtitle_width=500, quality_settings=None, progress_callback=None,
                         video_index=0, enable_dynamic_subtitle=False, animation_style="高亮放大", 
                         animation_intensity=1.5, highlight_color="#FFD700", match_mode="随机样式", 
                         position_x=540, position_y=960):  # 添加动态字幕参数
@@ -3038,19 +3038,15 @@ def process_image_for_overlay(image_path, output_path, size=(420, 420)):
         import traceback
         traceback.print_exc()
         return None
-
-
-
-
-
-
-
-
-
+import sys
+import time
+import random
+from pathlib import Path
+from PIL import Image, ImageDraw, ImageFont
 
 
 def create_subtitle_image(text, style=None, width=1080, height=500, font_size=70, 
-                         output_path=None, subtitle_width=800):
+                         output_path=None, subtitle_width=500):
     """
     创建字幕图片
     
@@ -3082,8 +3078,10 @@ def create_subtitle_image(text, style=None, width=1080, height=500, font_size=70
             
         # 创建透明背景的图片，宽度为subtitle_width+一些边距，而不是整个视频宽度
         # 这样可以确保字幕图片的实际宽度与文本宽度匹配
-        image_width = min(width, subtitle_width + 100)  # 添加一些边距
-        image = Image.new('RGBA', (image_width, height), (0, 0, 0, 0))
+        # 增加额外的边距以避免文本被截断，同时确保图片足够大以容纳所有文本
+        image_width = min(width, max(subtitle_width + 200, 1200))  # 增加边距并设置最小宽度
+        image_height = max(height, 600)  # 增加图片高度以确保有足够的垂直空间
+        image = Image.new('RGBA', (image_width, image_height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(image)
         
         # 如果是"random"样式，先随机选择一个实际样式
@@ -3271,7 +3269,7 @@ def create_subtitle_image(text, style=None, width=1080, height=500, font_size=70
         # 分割文本为多行并实现自动换行
         lines = text.strip().split('\n')
         
-        # 实现自动换行功能
+        # 实现自动换行功能 - 改进版本，避免切断单词
         wrapped_lines = []
         for line in lines:
             # 检查每行的宽度，如果超过subtitle_width则自动换行
@@ -3282,10 +3280,11 @@ def create_subtitle_image(text, style=None, width=1080, height=500, font_size=70
                 wrapped_lines.append(line)
             else:
                 # 当前行宽度超过设定值，需要自动换行
+                # 改进的换行逻辑：避免切断单词
                 words = line.split(' ')  # 以空格分词
                 current_line = ""
                 
-                for word in words:
+                for i, word in enumerate(words):
                     # 尝试添加当前单词到当前行
                     test_line = current_line + (" " if current_line else "") + word
                     test_width = draw.textlength(test_line, font=font)
@@ -3296,12 +3295,31 @@ def create_subtitle_image(text, style=None, width=1080, height=500, font_size=70
                     else:
                         # 添加单词后超过宽度，需要换行
                         if current_line:
+                            # 如果当前行不为空，将当前行添加到结果中
                             wrapped_lines.append(current_line)
+                            # 新的一行从当前单词开始
                             current_line = word
                         else:
-                            # 单个单词就超过宽度，强制换行
-                            wrapped_lines.append(word)
-                            current_line = ""
+                            # 如果当前行为空但单个单词就超过宽度，我们需要强制换行
+                            # 按字符逐个添加直到达到宽度限制
+                            char_line = ""
+                            for char in word:
+                                test_char_line = char_line + char
+                                test_char_width = draw.textlength(test_char_line, font=font)
+                                
+                                if test_char_width <= subtitle_width:
+                                    char_line = test_char_line
+                                else:
+                                    # 如果添加这个字符会超过宽度
+                                    if char_line:  # 如果已经有字符了，换行
+                                        wrapped_lines.append(char_line)
+                                        char_line = char
+                                    else:  # 如果第一个字符就超宽，强制添加
+                                        char_line = char
+                            
+                            # 处理剩余的字符
+                            if char_line:
+                                current_line = char_line
                 
                 # 添加最后一行
                 if current_line:
@@ -3310,12 +3328,12 @@ def create_subtitle_image(text, style=None, width=1080, height=500, font_size=70
         print(f"原始行数: {len(lines)}, 自动换行后行数: {len(wrapped_lines)}")
         print(f"字幕最大宽度设置: {subtitle_width}px")
         
-        # 计算行高和总高度
-        line_height = int(custom_font_size * 1.3)  # 增加行高系数，从1.1倍改为1.3倍，解决小字体时行间距过小的问题
-        total_height = line_height * len(wrapped_lines)
+        # 计算行高和总高度，增加额外空间确保文本完整显示
+        line_height = int(custom_font_size * 1.5)  # 进一步增加行高系数，从1.3倍改为1.5倍
+        total_height = line_height * len(wrapped_lines) + 100  # 增加额外的垂直空间
         
-        # 计算起始Y坐标，使文本垂直居中
-        y_start = (height - total_height) // 2
+        # 计算起始Y坐标，使文本垂直居中，并增加顶部边距
+        y_start = max(50, (image_height - total_height) // 2)  # 确保至少有50像素的顶部边距
         
         print(f"行高: {line_height}, 总高度: {total_height}, 起始Y: {y_start}")
         
@@ -3324,7 +3342,7 @@ def create_subtitle_image(text, style=None, width=1080, height=500, font_size=70
             # 计算文本宽度以居中
             text_width = draw.textlength(line, font=font)
             # 修改为左对齐，而不是居中对齐
-            x = 50  # 固定左边距
+            x = 80  # 增加左边距到80像素，提供更多空间
             y = y_start + i * line_height
             
             print(f"行 {i+1}: 宽度={text_width}, X={x}, Y={y}")
@@ -3340,17 +3358,17 @@ def create_subtitle_image(text, style=None, width=1080, height=500, font_size=70
                     shadow_y = y + 4
                 draw.text((shadow_x, shadow_y), line, font=font, fill=shadow_color)
             
-            # 创建一个临时图像用于描边
-            stroke_img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+            # 创建一个临时图像用于描边，确保尺寸与主图像匹配
+            stroke_img = Image.new('RGBA', (image_width, image_height), (0, 0, 0, 0))
             stroke_draw = ImageDraw.Draw(stroke_img)
             
             # 确保stroke_width是整数类型
             stroke_width_int = int(stroke_width) if isinstance(stroke_width, (int, float)) else 2
             
-            # 使用描边绘制文本
-            for dx in range(-stroke_width_int, stroke_width_int + 1):
-                for dy in range(-stroke_width_int, stroke_width_int + 1):
-                    if dx*dx + dy*dy <= stroke_width_int*stroke_width_int:
+            # 使用描边绘制文本，增加描边范围以确保完整显示
+            for dx in range(-stroke_width_int-3, stroke_width_int + 4):  # 增加描边范围
+                for dy in range(-stroke_width_int-3, stroke_width_int + 4):  # 增加描边范围
+                    if dx*dx + dy*dy <= (stroke_width_int+2)*(stroke_width_int+2):  # 调整描边范围计算
                         stroke_draw.text((x + dx, y + dy), line, font=font, fill=stroke_color)
             
             # 将描边图像合并到主图像

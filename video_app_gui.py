@@ -1050,8 +1050,9 @@ class VideoProcessorApp(QMainWindow):
         # 添加字幕宽度调节
         self.subtitle_width = QSpinBox()
         self.subtitle_width.setRange(200, 1500)
-        self.subtitle_width.setValue(800)
+        self.subtitle_width.setValue(600)  # 增加默认字幕宽度从500到600像素
         self.subtitle_width.setToolTip("字幕最大宽度（像素），超过此宽度自动换行")
+
         
         # 启用字幕开关
         self.enable_subtitle = QCheckBox("启用字幕")
@@ -2460,7 +2461,7 @@ class VideoProcessorApp(QMainWindow):
         self.font_size.setValue(self.settings.value("font_size", 70, type=int))
         
         # 字幕宽度
-        self.subtitle_width.setValue(self.settings.value("subtitle_width", 800, type=int))
+        self.subtitle_width.setValue(self.settings.value("subtitle_width", 600, type=int))
         
         # 字幕位置
         self.subtitle_text_x.setValue(self.settings.value("subtitle_text_x", 0, type=int))

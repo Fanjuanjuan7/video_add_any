@@ -532,13 +532,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 else:
                     current_word += char
             
+            # 添加最后一个单词
             if current_word:
                 words.append(current_word)
         else:
-            # 英文按单词分割
-            words = re.findall(r'\b\w+\b|[.,!?;:]', text)
+            # 英文按空格分割
+            words = text.split()
         
-        return [word for word in words if word.strip()]
+        return words
     
     def _load_font(self, font_size: int):
         """
