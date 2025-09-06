@@ -527,126 +527,9 @@ class ProcessingThread(QThread):
             # 记录完成日志
             logging.info(f"🏁 批量处理完成！成功: {success_count}/{total_files} 个，耗时: {total_duration:.1f}秒")
             
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            
-            # 准备错误统计信息
-            total_items = len(self.short_videos) + len(self.long_videos) + len(self.folders)
-            error_stats = {
-                'total_videos': total_items,
-                'success_count': 0,
-                'failed_count': total_items,
-                'total_time': time.time() - start_time if 'start_time' in locals() else 0,
-                'avg_time': 0,
-                'failed_videos': [f"⏱️ {Path(p).name}" for p in self.short_videos] + 
-                                [f"🎬 {Path(p).name}" for p in self.long_videos] + 
-                                [f"📁 {Path(p).name}" for p in self.folders],
-                'output_dir': str(self.output_dir),
-                'error': str(e)
-            }
-            
-            self.progress_updated.emit(100, f"处理出错: {str(e)}")
-            self.processing_complete.emit(False, error_stats)
-
-                            print(f"已清理临时目录: {video_info['temp_dir']}")
-                        except Exception as e:
-                            print(f"清理临时目录失败: {e}")
-            
-            # 所有处理完成
-            end_time = time.time()
-            total_duration = end_time - start_time
-            avg_duration = total_duration / total_files if total_files > 0 else 0
-            
-            # 准备统计信息
-            stats = {
-                'total_videos': total_files,
-                'success_count': success_count,
-                'failed_count': len(failed_items),
-                'failed_videos': [item.split(' ', 1)[1] if ' ' in item else item for item in failed_items],
-                'total_time': total_duration,
-                'avg_time': avg_duration,
-                'output_dir': str(self.output_dir)
-            }
-            
-            # 发送完成信号
-            self.processing_complete.emit(True, stats)
-            
-            # 记录完成日志
-            logging.info(f"🏁 批量处理完成！成功: {success_count}/{total_files} 个，耗时: {total_duration:.1f}秒")
-            
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            
-            # 准备错误统计信息
-            total_items = len(self.short_videos) + len(self.long_videos) + len(self.folders)
-            error_stats = {
-                'total_videos': total_items,
-                'success_count': 0,
-                'failed_count': total_items,
-                'total_time': time.time() - start_time if 'start_time' in locals() else 0,
-                'avg_time': 0,
-                'failed_videos': [f"⏱️ {Path(p).name}" for p in self.short_videos] + 
-                                [f"🎬 {Path(p).name}" for p in self.long_videos] + 
-                                [f"📁 {Path(p).name}" for p in self.folders],
-                'output_dir': str(self.output_dir),
-                'error': str(e)
-            }
-            
-            self.progress_updated.emit(100, f"处理出错: {str(e)}")
-            self.processing_complete.emit(False, error_stats)
-
-                            print(f"已清理临时目录: {video_info['temp_dir']}")
-                        except Exception as e:
-                            print(f"清理临时目录失败: {e}")
-            
-            # 所有处理完成
-            end_time = time.time()
-            total_duration = end_time - start_time
-            avg_duration = total_duration / total_files if total_files > 0 else 0
-            
-            # 准备统计信息
-            stats = {
-                'total_videos': total_files,
-                'success_count': success_count,
-                'failed_count': len(failed_items),
-                'failed_videos': [item.split(' ', 1)[1] if ' ' in item else item for item in failed_items],
-                'total_time': total_duration,
-                'avg_time': avg_duration,
-                'output_dir': str(self.output_dir)
-            }
-            
-            # 发送完成信号
-            self.processing_complete.emit(True, stats)
-            
-            # 记录完成日志
-            logging.info(f"🏁 批量处理完成！成功: {success_count}/{total_files} 个，耗时: {total_duration:.1f}秒")
-            
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            
-            # 准备错误统计信息
-            total_items = len(self.short_videos) + len(self.long_videos) + len(self.folders)
-            error_stats = {
-                'total_videos': total_items,
-                'success_count': 0,
-                'failed_count': total_items,
-                'total_time': time.time() - start_time if 'start_time' in locals() else 0,
-                'avg_time': 0,
-                'failed_videos': [f"⏱️ {Path(p).name}" for p in self.short_videos] + 
-                                [f"🎬 {Path(p).name}" for p in self.long_videos] + 
-                                [f"📁 {Path(p).name}" for p in self.folders],
-                'output_dir': str(self.output_dir),
-                'error': str(e)
-            }
-            
-            self.progress_updated.emit(100, f"处理出错: {str(e)}")
-            self.processing_complete.emit(False, error_stats)
-            
+        finally:
             # 无论成功还是失败，都清理临时目录
-            if 'temp_dir' in video_info:
+            if 'video_info' in locals() and 'temp_dir' in video_info:
                 try:
                     import shutil
                     shutil.rmtree(video_info['temp_dir'])
@@ -675,28 +558,6 @@ class ProcessingThread(QThread):
             
             # 记录完成日志
             logging.info(f"🏁 批量处理完成！成功: {success_count}/{total_files} 个，耗时: {total_duration:.1f}秒")
-            
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            
-            # 准备错误统计信息
-            total_items = len(self.short_videos) + len(self.long_videos) + len(self.folders)
-            error_stats = {
-                'total_videos': total_items,
-                'success_count': 0,
-                'failed_count': total_items,
-                'total_time': time.time() - start_time if 'start_time' in locals() else 0,
-                'avg_time': 0,
-                'failed_videos': [f"⏱️ {Path(p).name}" for p in self.short_videos] + 
-                                [f"🎬 {Path(p).name}" for p in self.long_videos] + 
-                                [f"📁 {Path(p).name}" for p in self.folders],
-                'output_dir': str(self.output_dir),
-                'error': str(e)
-            }
-            
-            self.progress_updated.emit(100, f"处理出错: {str(e)}")
-            self.processing_complete.emit(False, error_stats)
 
 class VideoProcessorApp(QMainWindow):
     """视频处理应用主窗口"""
