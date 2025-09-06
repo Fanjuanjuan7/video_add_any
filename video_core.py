@@ -139,13 +139,25 @@ def trim_music_to_video_duration(music_path, video_duration, output_path):
         # 裁剪音乐到视频时长
         print(f"裁剪音乐从 {music_duration}秒 到 {video_duration}秒")
         
-        trim_cmd = [
-            "ffmpeg", "-y",  # 覆盖输出文件
-            "-i", str(music_path),
-            "-t", str(video_duration),  # 设置输出时长
-            "-c", "copy",  # 复制编码，避免重新编码
-            str(output_path)
-        ]
+        # 根据操作系统设置不同的音频参数
+        if platform.system() == "Windows":
+            trim_cmd = [
+                "ffmpeg", "-y",  # 覆盖输出文件
+                "-i", str(music_path),
+                "-t", str(video_duration),  # 设置输出时长
+                "-ar", "44100",  # 设置采样率
+                "-ac", "2",      # 设置声道数
+                "-c:a", "aac",   # 使用AAC编码
+                str(output_path)
+            ]
+        else:
+            trim_cmd = [
+                "ffmpeg", "-y",  # 覆盖输出文件
+                "-i", str(music_path),
+                "-t", str(video_duration),  # 设置输出时长
+                "-c", "copy",  # 复制编码，避免重新编码
+                str(output_path)
+            ]
         
         if run_ffmpeg_command(trim_cmd, quiet=True):
             print(f"音乐裁剪成功: {output_path}")
@@ -811,7 +823,14 @@ def add_tts_audio_to_video(video_path, audio_path, output_path, audio_volume=100
     try:
         # 构建FFmpeg命令，将音频混合到视频中
         # 使用volume滤镜调整音频音量
-        audio_volume_filter = f"volume={audio_volume/100:.2f}"
+        # 为Windows系统优化音频处理参数
+        import platform
+        if platform.system() == 'Windows':
+            # Windows下使用更稳定的音频滤镜参数
+            audio_volume_filter = f"volume={audio_volume/100:.2f}:precision=fixed"
+        else:
+            # macOS和其他系统使用默认参数
+            audio_volume_filter = f"volume={audio_volume/100:.2f}"
         
         # 首先检查视频是否有音频流
         import subprocess
@@ -830,12 +849,20 @@ def add_tts_audio_to_video(video_path, audio_path, output_path, audio_volume=100
         if has_audio:
             # 视频有音频流，混合音频
             # 使用amix滤镜混合背景音乐和TTS音频，确保两者都能听到
+            # 根据操作系统设置不同的amix参数
+            if platform.system() == "Windows":
+                amix_params = "inputs=2:duration=longest:dropout_transition=0:weights=1 1"
+            else:
+                amix_params = "inputs=2:duration=first:weights=1 1"
+                
             cmd = [
                 'ffmpeg', '-y', '-i', str(video_path), '-i', str(audio_path),
-                '-filter_complex', f'[1:a]{audio_volume_filter}[tts_audio];[0:a][tts_audio]amix=inputs=2:duration=first:weights=1 1[aout]',
+                '-filter_complex', f'[1:a]{audio_volume_filter}[tts_audio];[0:a][tts_audio]amix={amix_params}[aout]',
                 '-map', '0:v', '-map', '[aout]',
                 '-c:v', 'copy',  # 视频流直接复制，不重新编码
                 '-c:a', 'aac',   # 音频编码为AAC
+                '-ar', '44100',  # 设置音频采样率为44.1kHz
+                '-ac', '2',      # 设置音频通道为立体声
                 '-b:a', '128k',  # 音频比特率
                 '-strict', 'experimental',
                 '-y',  # 覆盖输出文件
@@ -850,6 +877,8 @@ def add_tts_audio_to_video(video_path, audio_path, output_path, audio_volume=100
                 '-map', '0:v', '-map', '[audio]',
                 '-c:v', 'copy',  # 视频流直接复制，不重新编码
                 '-c:a', 'aac',   # 音频编码为AAC
+                '-ar', '44100',  # 设置音频采样率为44.1kHz
+                '-ac', '2',      # 设置音频通道为立体声
                 '-b:a', '128k',  # 音频比特率
                 '-strict', 'experimental',
                 '-y',  # 覆盖输出文件
@@ -2200,12 +2229,21 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                     # 使用实际记录的音乐索引，而不是重新计算
                     music_input_index = music_index
                     
+                    # 为Windows系统优化音频处理参数
+                    import platform
+                    if platform.system() == 'Windows':
+                        # Windows下使用更稳定的音频滤镜参数
+                        audio_filter = f'volume={volume_ratio}:precision=fixed'
+                    else:
+                        # macOS和其他系统使用默认参数
+                        audio_filter = f'volume={volume_ratio}'
+                    
                     audio_params = [
                         '-map', '0:v',  # 映射视频流
                         '-map', f'{music_input_index}:a?',  # 映射音乐的音频流，使用可选映射避免错误
                         '-c:a', 'aac',
                         '-b:a', '128k',
-                        '-af', f'volume={volume_ratio}',  # 调节音量
+                        '-af', audio_filter,  # 调节音量
                         '-shortest'  # 以最短的流为准（视频结束时音频也结束）
                     ]
                     print(f"【音乐处理】直接模式 - 视频流映射: 0:v")
@@ -2286,6 +2324,15 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                     print(f"【音乐处理】警告：音乐文件不存在！")
                     print(f"【音乐处理】检查的路径: {selected_music_path}")
                 
+                # 为Windows系统优化音频处理参数
+                import platform
+                if platform.system() == 'Windows':
+                    # Windows下使用更稳定的音频滤镜参数
+                    audio_filter = f'volume={volume_ratio}:precision=fixed'
+                else:
+                    # macOS和其他系统使用默认参数
+                    audio_filter = f'volume={volume_ratio}'
+                
                 copy_with_music_cmd = [
                     'ffmpeg', '-y',
                     '-i', str(video_path),
@@ -2293,7 +2340,7 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                     '-c:v', 'copy',
                     '-c:a', 'aac',
                     '-b:a', '128k',
-                    '-af', f'volume={volume_ratio}',
+                    '-af', audio_filter,
                     '-map', '0:v',  # 映射视频流
                     '-map', '1:a?',   # 映射音频流，使用可选映射避免错误
                     '-shortest',
