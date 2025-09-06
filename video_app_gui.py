@@ -361,9 +361,10 @@ class ProcessingThread(QThread):
                         
                         # 对预处理后的视频进行精处理
                         # 获取音乐模式的实际值
-                        music_mode_value = self.music_mode
+                        music_mode_value = self.music_mode.currentData() if hasattr(self.music_mode, 'currentData') else self.music_mode
+                        music_path_value = self.music_path.text() if hasattr(self.music_path, 'text') else self.music_path
                         print(f"调用process_video进行精处理，视频索引: {i}")
-                        print(f"音乐参数: enable_music={self.enable_music}, music_path={self.music_path}, music_mode={music_mode_value}, music_volume={self.music_volume}")
+                        print(f"音乐参数: enable_music={self.enable_music}, music_path={music_path_value}, music_mode={music_mode_value}, music_volume={self.music_volume}")
                         result = process_video(
                             preprocessed_path, 
                             str(output_path),
@@ -385,7 +386,7 @@ class ProcessingThread(QThread):
                             self.enable_background,
                             self.enable_image,
                             self.enable_music,
-                            self.music_path,
+                            music_path_value,
                             music_mode_value,
                             self.music_volume,
                             self.user_document_path,

@@ -1703,36 +1703,36 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
         img_index = None
         gif_index = None
         
+        # 素材输入已在前面添加，这里只需要设置索引
+        current_input_index = 1
+        
         if enable_subtitle and subtitle_img:
-            ffmpeg_command.extend(['-i', str(subtitle_img)])
-            subtitle_index = input_index
-            input_index += 1
-            logging.info(f"  📝 添加字幕输入: 索引{subtitle_index}, 文件{subtitle_img}")
+            subtitle_index = current_input_index
+            current_input_index += 1
+            logging.info(f"  📝 字幕输入索引: {subtitle_index}")
             
         if enable_background and bg_img:
-            ffmpeg_command.extend(['-i', str(bg_img)])
-            bg_index = input_index
-            input_index += 1
-            logging.info(f"  🎨 添加背景输入: 索引{bg_index}, 文件{bg_img}")
+            bg_index = current_input_index
+            current_input_index += 1
+            logging.info(f"  🎨 背景输入索引: {bg_index}")
             
         if enable_image and has_image:
             # 确保processed_img_path已定义且文件存在
             if 'processed_img_path' in locals() and processed_img_path and Path(processed_img_path).exists():
-                ffmpeg_command.extend(['-i', str(processed_img_path)])
-                img_index = input_index
-                input_index += 1
-                logging.info(f"  📸 添加图片输入: 索引{img_index}, 文件{processed_img_path}")
+                img_index = current_input_index
+                current_input_index += 1
+                logging.info(f"  📸 图片输入索引: {img_index}")
             else:
                 logging.warning(f"  ⚠️ 图片启用但processed_img_path未定义或文件不存在")
                 img_index = None
                 has_image = False
             
         if enable_gif and has_gif:
-            ffmpeg_command.extend(['-i', str(processed_gif_path)])
-            gif_index = input_index
-            input_index += 1
-            logging.info(f"  🎞️ 添加GIF输入: 索引{gif_index}, 文件{processed_gif_path}")
+            gif_index = current_input_index
+            current_input_index += 1
+            logging.info(f"  🎞️ GIF输入索引: {gif_index}")
         
+        input_index = current_input_index
         logging.info(f"  📊 总输入文件数: {input_index} (包括主视频)")
             
         # 构建复杂过滤器
@@ -2056,7 +2056,25 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
         # 构建FFmpeg命令
         input_index = 1  # 视频输入为0，从1开始计算其他输入
         
+        # 添加字幕、背景、图片、GIF等素材输入
+        if enable_subtitle and subtitle_img:
+            ffmpeg_command.extend(['-i', str(subtitle_img)])
+            input_index += 1
+            
+        if enable_background and bg_img:
+            ffmpeg_command.extend(['-i', str(bg_img)])
+            input_index += 1
+            
+        if enable_image and has_image and 'processed_img_path' in locals() and processed_img_path and Path(processed_img_path).exists():
+            ffmpeg_command.extend(['-i', str(processed_img_path)])
+            input_index += 1
+            
+        if enable_gif and has_gif:
+            ffmpeg_command.extend(['-i', str(processed_gif_path)])
+            input_index += 1
+        
         # 音乐输入
+        music_index = None
         if selected_music_path:
             print(f"【音乐处理】开始添加音乐输入到FFmpeg命令")
             print(f"【音乐处理】音乐文件路径: {selected_music_path}")
