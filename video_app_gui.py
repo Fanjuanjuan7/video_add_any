@@ -113,6 +113,22 @@ class ProcessingThread(QThread):
         self.animation_intensity = animation_intensity
         self.highlight_color = highlight_color
         self.match_mode = match_mode
+        
+        # 构建按文件名升序排列的文件列表（包括文件和文件夹）
+        all_files = []
+        # 添加文件夹
+        for folder_path in self.folders:
+            all_files.append(('folder', folder_path))
+        # 添加短视频
+        for video_path in self.short_videos:
+            all_files.append(('video', video_path))
+        # 添加长视频
+        for video_path in self.long_videos:
+            all_files.append(('video', video_path))
+        
+        # 按文件名升序排列
+        self.sorted_file_list = sorted(all_files, key=lambda x: Path(x[1]).name)
+        print(f"排序后的文件列表: {self.sorted_file_list}")
     
     def run(self):
         import time
@@ -120,6 +136,12 @@ class ProcessingThread(QThread):
         from pathlib import Path
         from video_core import process_video, process_folder_videos, preprocess_video_by_type, preprocess_video_without_reverse
         
+        start_time = time.time()
+        
+        # 初始化变量
+        total_files = 0
+        success_count = 0
+        failed_items = []
         start_time = time.time()
         
         try:
@@ -296,6 +318,17 @@ class ProcessingThread(QThread):
             print(f"预处理阶段完成，共预处理 {len(preprocessed_videos)} 个视频，开始统一处理阶段...")
             total_preprocessed = len(preprocessed_videos)
             
+            # 创建预处理视频到排序列表的映射
+            # 将预处理后的视频索引映射到排序后的索引
+            preprocessed_to_sorted_map = {}
+            for j, preprocessed_video in enumerate(preprocessed_videos):
+                for i, (file_type, file_path) in enumerate(self.sorted_file_list):
+                    if preprocessed_video['original_path'] == file_path:
+                        preprocessed_to_sorted_map[j] = i
+                        break
+            
+            print(f"预处理视频到排序列表映射: {preprocessed_to_sorted_map}")
+            
             # 统一处理所有预处理后的视频，使用简单的索引进行背景音乐匹配
             for i, video_info in enumerate(preprocessed_videos):
                 item_start_time = time.time()
@@ -340,15 +373,18 @@ class ProcessingThread(QThread):
                         current_tts_text = self.tts_text  # 默认使用用户输入的固定文本
                         print(f"视频处理TTS设置: enable={self.enable_tts}, fixed_text='{self.tts_text}'")
                         if self.enable_tts and not self.tts_text:
-                            # 为每个视频获取对应的TTS文本
+                            # 为每个视频获取对应的TTS文本，使用排序后的索引
+                            sorted_index = preprocessed_to_sorted_map.get(i, i)
+                            print(f"使用排序索引获取TTS文本: 预处理索引={i}, 排序索引={sorted_index}")
+                            
                             try:
                                 from video_helpers import get_tts_text_for_video
                                 from utils import load_subtitle_config
                                 subtitle_df = load_subtitle_config()
                                 if subtitle_df is not None and not subtitle_df.empty:
-                                    # 使用视频索引获取对应的TTS文本（简化索引计算）
-                                    current_tts_text = get_tts_text_for_video(subtitle_df, self.subtitle_lang, i)
-                                    print(f"为视频 {i+1} 获取TTS文本: {current_tts_text}")
+                                    # 使用排序后的索引获取对应的TTS文本
+                                    current_tts_text = get_tts_text_for_video(subtitle_df, self.subtitle_lang, sorted_index)
+                                    print(f"为视频 {i+1} (排序索引 {sorted_index}) 获取TTS文本: {current_tts_text}")
                                 else:
                                     print("无法加载字幕配置，使用空TTS文本")
                                     current_tts_text = ""
@@ -363,7 +399,9 @@ class ProcessingThread(QThread):
                         # 获取音乐模式的实际值
                         music_mode_value = self.music_mode.currentData() if hasattr(self.music_mode, 'currentData') else self.music_mode
                         music_path_value = self.music_path.text() if hasattr(self.music_path, 'text') else self.music_path
-                        print(f"调用process_video进行精处理，视频索引: {i}")
+                        # 使用排序后的索引作为视频索引
+                        sorted_index = preprocessed_to_sorted_map.get(i, i)
+                        print(f"调用process_video进行精处理，预处理索引: {i}, 排序索引: {sorted_index}")
                         print(f"音乐参数: enable_music={self.enable_music}, music_path={music_path_value}, music_mode={music_mode_value}, music_volume={self.music_volume}")
                         result = process_video(
                             preprocessed_path, 
@@ -402,7 +440,7 @@ class ProcessingThread(QThread):
                             self.subtitle_width,
                             quality_settings=self.quality_settings,
                             progress_callback=update_progress_callback,
-                            video_index=i,  # 传递简单的索引，避免复杂的索引计算
+                            video_index=sorted_index,  # 传递排序后的索引，确保文档数据按正确顺序匹配
                             enable_tts=self.enable_tts,
                             tts_voice=self.tts_voice,
                             tts_volume=self.tts_volume,
@@ -466,6 +504,155 @@ class ProcessingThread(QThread):
                             print(f"已清理临时目录: {video_info['temp_dir']}")
                         except Exception as e:
                             print(f"清理临时目录失败: {e}")
+            
+            # 所有处理完成
+            end_time = time.time()
+            total_duration = end_time - start_time
+            avg_duration = total_duration / total_files if total_files > 0 else 0
+            
+            # 准备统计信息
+            stats = {
+                'total_videos': total_files,
+                'success_count': success_count,
+                'failed_count': len(failed_items),
+                'failed_videos': [item.split(' ', 1)[1] if ' ' in item else item for item in failed_items],
+                'total_time': total_duration,
+                'avg_time': avg_duration,
+                'output_dir': str(self.output_dir)
+            }
+            
+            # 发送完成信号
+            self.processing_complete.emit(True, stats)
+            
+            # 记录完成日志
+            logging.info(f"🏁 批量处理完成！成功: {success_count}/{total_files} 个，耗时: {total_duration:.1f}秒")
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            
+            # 准备错误统计信息
+            total_items = len(self.short_videos) + len(self.long_videos) + len(self.folders)
+            error_stats = {
+                'total_videos': total_items,
+                'success_count': 0,
+                'failed_count': total_items,
+                'total_time': time.time() - start_time if 'start_time' in locals() else 0,
+                'avg_time': 0,
+                'failed_videos': [f"⏱️ {Path(p).name}" for p in self.short_videos] + 
+                                [f"🎬 {Path(p).name}" for p in self.long_videos] + 
+                                [f"📁 {Path(p).name}" for p in self.folders],
+                'output_dir': str(self.output_dir),
+                'error': str(e)
+            }
+            
+            self.progress_updated.emit(100, f"处理出错: {str(e)}")
+            self.processing_complete.emit(False, error_stats)
+
+                            print(f"已清理临时目录: {video_info['temp_dir']}")
+                        except Exception as e:
+                            print(f"清理临时目录失败: {e}")
+            
+            # 所有处理完成
+            end_time = time.time()
+            total_duration = end_time - start_time
+            avg_duration = total_duration / total_files if total_files > 0 else 0
+            
+            # 准备统计信息
+            stats = {
+                'total_videos': total_files,
+                'success_count': success_count,
+                'failed_count': len(failed_items),
+                'failed_videos': [item.split(' ', 1)[1] if ' ' in item else item for item in failed_items],
+                'total_time': total_duration,
+                'avg_time': avg_duration,
+                'output_dir': str(self.output_dir)
+            }
+            
+            # 发送完成信号
+            self.processing_complete.emit(True, stats)
+            
+            # 记录完成日志
+            logging.info(f"🏁 批量处理完成！成功: {success_count}/{total_files} 个，耗时: {total_duration:.1f}秒")
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            
+            # 准备错误统计信息
+            total_items = len(self.short_videos) + len(self.long_videos) + len(self.folders)
+            error_stats = {
+                'total_videos': total_items,
+                'success_count': 0,
+                'failed_count': total_items,
+                'total_time': time.time() - start_time if 'start_time' in locals() else 0,
+                'avg_time': 0,
+                'failed_videos': [f"⏱️ {Path(p).name}" for p in self.short_videos] + 
+                                [f"🎬 {Path(p).name}" for p in self.long_videos] + 
+                                [f"📁 {Path(p).name}" for p in self.folders],
+                'output_dir': str(self.output_dir),
+                'error': str(e)
+            }
+            
+            self.progress_updated.emit(100, f"处理出错: {str(e)}")
+            self.processing_complete.emit(False, error_stats)
+
+                            print(f"已清理临时目录: {video_info['temp_dir']}")
+                        except Exception as e:
+                            print(f"清理临时目录失败: {e}")
+            
+            # 所有处理完成
+            end_time = time.time()
+            total_duration = end_time - start_time
+            avg_duration = total_duration / total_files if total_files > 0 else 0
+            
+            # 准备统计信息
+            stats = {
+                'total_videos': total_files,
+                'success_count': success_count,
+                'failed_count': len(failed_items),
+                'failed_videos': [item.split(' ', 1)[1] if ' ' in item else item for item in failed_items],
+                'total_time': total_duration,
+                'avg_time': avg_duration,
+                'output_dir': str(self.output_dir)
+            }
+            
+            # 发送完成信号
+            self.processing_complete.emit(True, stats)
+            
+            # 记录完成日志
+            logging.info(f"🏁 批量处理完成！成功: {success_count}/{total_files} 个，耗时: {total_duration:.1f}秒")
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            
+            # 准备错误统计信息
+            total_items = len(self.short_videos) + len(self.long_videos) + len(self.folders)
+            error_stats = {
+                'total_videos': total_items,
+                'success_count': 0,
+                'failed_count': total_items,
+                'total_time': time.time() - start_time if 'start_time' in locals() else 0,
+                'avg_time': 0,
+                'failed_videos': [f"⏱️ {Path(p).name}" for p in self.short_videos] + 
+                                [f"🎬 {Path(p).name}" for p in self.long_videos] + 
+                                [f"📁 {Path(p).name}" for p in self.folders],
+                'output_dir': str(self.output_dir),
+                'error': str(e)
+            }
+            
+            self.progress_updated.emit(100, f"处理出错: {str(e)}")
+            self.processing_complete.emit(False, error_stats)
+            
+            # 无论成功还是失败，都清理临时目录
+            if 'temp_dir' in video_info:
+                try:
+                    import shutil
+                    shutil.rmtree(video_info['temp_dir'])
+                    print(f"已清理临时目录: {video_info['temp_dir']}")
+                except Exception as e:
+                    print(f"清理临时目录失败: {e}")
             
             # 所有处理完成
             end_time = time.time()
@@ -2999,10 +3186,14 @@ class VideoProcessorApp(QMainWindow):
 
 if __name__ == "__main__":
     # 启用高DPI缩放
-    if hasattr(Qt, 'AA_EnableHighDpiScaling'):
+    try:
         QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
-    if hasattr(Qt, 'AA_UseHighDpiPixmaps'):
+    except AttributeError:
+        pass  # Qt版本可能不支持此属性
+    try:
         QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    except AttributeError:
+        pass  # Qt版本可能不支持此属性
     
     app = QApplication(sys.argv)
     

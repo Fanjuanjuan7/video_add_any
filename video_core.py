@@ -1502,20 +1502,26 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
             print(f"当前文档可用列: {available_columns}")
             print(f"=========================\n")
             
-            # 根据语言随机选择一条字幕
+            # 根据语言和视频索引选择对应的字幕
             subtitle_text = None
             
             print(f"可用的文档列: {available_columns}")
+            print(f"视频索引: {video_index}")
             
             if subtitle_lang == "chinese":
                 # 中文：明确指定使用zn列（字幕标题文本）
                 chinese_col = 'zn'
                 
                 if chinese_col in available_columns:
-                    available_subtitles = subtitle_df[subtitle_df[chinese_col].notna() & (subtitle_df[chinese_col] != "")][chinese_col].tolist()
-                    if available_subtitles:
-                        subtitle_text = str(random.choice(available_subtitles))
-                        print(f"✅ 中文映射成功：从 '{chinese_col}' 列随机选择字幕: {subtitle_text}")
+                    # 获取所有非空的中文字幕数据，按文件顺序匹配
+                    valid_subtitles = subtitle_df[subtitle_df[chinese_col].notna() & (subtitle_df[chinese_col] != "")]
+                    if not valid_subtitles.empty:
+                        # 使用视频索引获取对应的字幕，如果索引超出范围则使用最后一个
+                        if video_index < len(valid_subtitles):
+                            subtitle_text = str(valid_subtitles.iloc[video_index][chinese_col])
+                        else:
+                            subtitle_text = str(valid_subtitles.iloc[-1][chinese_col])
+                        print(f"✅ 中文映射成功：从 '{chinese_col}' 列获取索引 {video_index} 的字幕: {subtitle_text}")
                     else:
                         print(f"❌ '{chinese_col}' 列中没有有效数据")
                         subtitle_text = "特价促销\n现在下单立即享受优惠"
@@ -1530,10 +1536,15 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                 malay_col = 'malay_title'
                 
                 if malay_col in available_columns:
-                    available_subtitles = subtitle_df[subtitle_df[malay_col].notna() & (subtitle_df[malay_col] != "")][malay_col].tolist()
-                    if available_subtitles:
-                        subtitle_text = str(random.choice(available_subtitles))
-                        print(f"✅ 马来语映射成功：从 '{malay_col}' 列随机选择字幕: {subtitle_text}")
+                    # 获取所有非空的马来语字幕数据，按文件顺序匹配
+                    valid_subtitles = subtitle_df[subtitle_df[malay_col].notna() & (subtitle_df[malay_col] != "")]
+                    if not valid_subtitles.empty:
+                        # 使用视频索引获取对应的字幕，如果索引超出范围则使用最后一个
+                        if video_index < len(valid_subtitles):
+                            subtitle_text = str(valid_subtitles.iloc[video_index][malay_col])
+                        else:
+                            subtitle_text = str(valid_subtitles.iloc[-1][malay_col])
+                        print(f"✅ 马来语映射成功：从 '{malay_col}' 列获取索引 {video_index} 的字幕: {subtitle_text}")
                     else:
                         print(f"❌ '{malay_col}' 列中没有有效数据")
                         subtitle_text = "Grab cepat\nStok laris seperti roti canai"
@@ -1548,13 +1559,18 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                 thai_col = 'title_thai'
                 
                 if thai_col in available_columns:
-                    available_subtitles = subtitle_df[subtitle_df[thai_col].notna() & (subtitle_df[thai_col] != "")][thai_col].tolist()
-                    if available_subtitles:
-                        subtitle_text = str(random.choice(available_subtitles))
+                    # 获取所有非空的泰文字幕数据，按文件顺序匹配
+                    valid_subtitles = subtitle_df[subtitle_df[thai_col].notna() & (subtitle_df[thai_col] != "")]
+                    if not valid_subtitles.empty:
+                        # 使用视频索引获取对应的字幕，如果索引超出范围则使用最后一个
+                        if video_index < len(valid_subtitles):
+                            subtitle_text = str(valid_subtitles.iloc[video_index][thai_col])
+                        else:
+                            subtitle_text = str(valid_subtitles.iloc[-1][thai_col])
                         # 替换下划线为空格（如果泰文使用下划线占位）
                         if "_" in subtitle_text:
                             subtitle_text = subtitle_text.replace("_", " ")
-                        print(f"✅ 泰สั่งซื้อเลยอย่ารอช้า")
+                        print(f"✅ 泰语映射成功：从 '{thai_col}' 列获取索引 {video_index} 的字幕: {subtitle_text}")
                     else:
                         print(f"❌ '{thai_col}' 列中没有有效数据")
                         subtitle_text = "ราคาพิเศษ\nซื้อเลยอย่ารอช้า"  # 泰文示例
