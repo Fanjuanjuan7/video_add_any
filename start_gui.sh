@@ -12,21 +12,22 @@ cd "$SCRIPT_DIR"
 
 # 检查虚拟环境是否存在
 if [ ! -d "venv" ]; then
-    echo "错误: 虚拟环境不存在，请先运行 python3 -m venv venv 创建虚拟环境"
-    exit 1
+    echo "警告: 虚拟环境不存在，将直接使用系统Python环境"
 fi
 
-# 激活虚拟环境
-source venv/bin/activate
+# 激活虚拟环境（如果存在）
+if [ -d "venv" ]; then
+    source venv/bin/activate
+fi
 
 # 检查PyQt5是否安装
-if ! python -c "import PyQt5" 2>/dev/null; then
+if ! python3 -c "import PyQt5" 2>/dev/null; then
     echo "错误: PyQt5未安装，请运行 pip install PyQt5"
     exit 1
 fi
 
 # 设置Qt插件路径 - 解决macOS上cocoa插件找不到的问题
-export QT_QPA_PLATFORM_PLUGIN_PATH="$(python -c "import PyQt5; import os; print(os.path.join(PyQt5.__path__[0], 'Qt5', 'plugins'))")"
+export QT_QPA_PLATFORM_PLUGIN_PATH="$(python3 -c "import PyQt5; import os; print(os.path.join(PyQt5.__path__[0], 'Qt5', 'plugins'))")"
 
 # 验证插件路径是否存在
 if [ ! -d "$QT_QPA_PLATFORM_PLUGIN_PATH" ]; then
@@ -34,7 +35,7 @@ if [ ! -d "$QT_QPA_PLATFORM_PLUGIN_PATH" ]; then
     echo "尝试查找插件路径..."
     
     # 尝试查找插件路径
-    PLUGIN_PATH=$(find "$(python -c "import PyQt5; print(PyQt5.__path__[0])")" -name "libqcocoa.dylib" -type f 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
+    PLUGIN_PATH=$(find "$(python3 -c "import PyQt5; print(PyQt5.__path__[0])")" -name "libqcocoa.dylib" -type f 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
     
     if [ -n "$PLUGIN_PATH" ]; then
         export QT_QPA_PLATFORM_PLUGIN_PATH="$(dirname "$PLUGIN_PATH")"
@@ -49,6 +50,6 @@ echo "Qt插件路径: $QT_QPA_PLATFORM_PLUGIN_PATH"
 echo "启动GUI界面..."
 
 # 启动应用程序
-python video_app_gui.py
+python3 main.py
 
 echo "应用程序已退出"

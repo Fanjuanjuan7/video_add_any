@@ -16,6 +16,7 @@ import pandas as pd
 import time
 import logging
 import asyncio
+import platform  # 添加platform模块导入
 
 # 导入工具函数
 from utils import get_video_info, get_audio_duration, run_ffmpeg_command, get_data_path, ensure_dir, load_style_config, find_font_file, find_matching_image, generate_tts_audio, load_subtitle_config
