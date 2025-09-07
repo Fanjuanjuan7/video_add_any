@@ -138,11 +138,15 @@ class ProcessingThread(QThread):
         
         start_time = time.time()
         
-        # 初始化变量
+        # 初始化变量，确保在所有代码路径中都定义
         total_files = 0
         success_count = 0
         failed_items = []
-        start_time = time.time()
+        preprocessed_videos = []  # 在方法开始处初始化，确保在所有代码路径中都定义
+        total_duration = 0  # 初始化变量
+        avg_duration = 0    # 初始化变量
+        e = None            # 初始化变量
+        stats = {}          # 初始化变量
         
         try:
             # 获取日志管理器并记录开始信息
@@ -162,7 +166,7 @@ class ProcessingThread(QThread):
             
             # 第一阶段：预处理所有视频
             print("开始预处理阶段...")
-            preprocessed_videos = []  # 存储预处理后的视频路径和原始信息
+            # preprocessed_videos已在方法开始处初始化
             
             # 1. 预处理文件夹中的视频
             for i, folder_path in enumerate(self.folders):
@@ -388,8 +392,8 @@ class ProcessingThread(QThread):
                                 else:
                                     print("无法加载字幕配置，使用空TTS文本")
                                     current_tts_text = ""
-                            except Exception as e:
-                                print(f"获取TTS文本时出错: {e}")
+                            except Exception as exc:
+                                print(f"获取TTS文本时出错: {exc}")
                                 current_tts_text = ""
                         else:
                             current_tts_text = self.tts_text  # 确保变量已定义
@@ -481,8 +485,8 @@ class ProcessingThread(QThread):
                                 import shutil
                                 shutil.rmtree(video_info['temp_dir'])
                                 print(f"已清理临时目录: {video_info['temp_dir']}")
-                            except Exception as e:
-                                print(f"清理临时目录失败: {e}")
+                            except Exception as exc:
+                                print(f"清理临时目录失败: {exc}")
                 except Exception as video_error:
                     video_name = Path(original_path).name
                     failed_items.append(f"🎥 {video_name}")
@@ -502,8 +506,8 @@ class ProcessingThread(QThread):
                             import shutil
                             shutil.rmtree(video_info['temp_dir'])
                             print(f"已清理临时目录: {video_info['temp_dir']}")
-                        except Exception as e:
-                            print(f"清理临时目录失败: {e}")
+                        except Exception as exc:
+                            print(f"清理临时目录失败: {exc}")
             
             # 所有处理完成
             end_time = time.time()
@@ -526,38 +530,39 @@ class ProcessingThread(QThread):
             
             # 记录完成日志
             logging.info(f"🏁 批量处理完成！成功: {success_count}/{total_files} 个，耗时: {total_duration:.1f}秒")
+
+        except Exception as exc:
+            # 处理异常情况
+            e = exc  # 保存异常到变量
+            logging.error(f"处理过程中发生异常: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            # 准备错误统计信息
+            stats = {
+                'total_videos': total_files,
+                'success_count': success_count,
+                'failed_count': len(failed_items),
+                'failed_videos': [item.split(' ', 1)[1] if ' ' in item else item for item in failed_items],
+                'total_time': 0,
+                'avg_time': 0,
+                'output_dir': str(self.output_dir),
+                'error': str(e)
+            }
+            
+            # 发送完成信号
+            self.processing_complete.emit(False, stats)
             
         finally:
-            # 无论成功还是失败，都清理临时目录
-            if 'video_info' in locals() and 'temp_dir' in video_info:
-                try:
-                    import shutil
-                    shutil.rmtree(video_info['temp_dir'])
-                    print(f"已清理临时目录: {video_info['temp_dir']}")
-                except Exception as e:
-                    print(f"清理临时目录失败: {e}")
-            
-            # 所有处理完成
-            end_time = time.time()
-            total_duration = end_time - start_time
-            avg_duration = total_duration / total_files if total_files > 0 else 0
-            
-            # 准备统计信息
-            stats = {
-                'total_videos': total_files,
-                'success_count': success_count,
-                'failed_count': len(failed_items),
-                'failed_videos': [item.split(' ', 1)[1] if ' ' in item else item for item in failed_items],
-                'total_time': total_duration,
-                'avg_time': avg_duration,
-                'output_dir': str(self.output_dir)
-            }
-            
-            # 发送完成信号
-            self.processing_complete.emit(True, stats)
-            
-            # 记录完成日志
-            logging.info(f"🏁 批量处理完成！成功: {success_count}/{total_files} 个，耗时: {total_duration:.1f}秒")
+            # 无论成功还是失败，都清理所有临时目录
+            for video_info in preprocessed_videos:
+                if 'temp_dir' in video_info:
+                    try:
+                        import shutil
+                        shutil.rmtree(video_info['temp_dir'])
+                        print(f"已清理临时目录: {video_info['temp_dir']}")
+                    except Exception as exc:
+                        print(f"清理临时目录失败: {exc}")
 
 class VideoProcessorApp(QMainWindow):
     """视频处理应用主窗口"""
@@ -3043,16 +3048,19 @@ class VideoProcessorApp(QMainWindow):
             self.save_current_settings()
             if event is not None:
                 event.accept()
+import sys
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import Qt
 
 
 if __name__ == "__main__":
     # 启用高DPI缩放
     try:
-        QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+        QApplication.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling, True)
     except AttributeError:
         pass  # Qt版本可能不支持此属性
     try:
-        QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+        QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
     except AttributeError:
         pass  # Qt版本可能不支持此属性
     
