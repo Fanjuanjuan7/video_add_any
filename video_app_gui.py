@@ -21,8 +21,9 @@ try:
                                 QSpinBox, QDoubleSpinBox, QVBoxLayout, QHBoxLayout, QGridLayout, 
                                 QGroupBox, QMessageBox, QProgressBar, 
                                 QListWidget, QAbstractItemView, QSplitter, QSlider,
-                                QTextEdit)  # 添加QTextEdit导入
+                                QTextEdit, QColorDialog)  # 添加QColorDialog导入
     from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSettings
+    from PyQt5.QtGui import QColor  # 添加QColor导入
     
 except ImportError as e:
     print(f"错误: {e}")
@@ -59,7 +60,10 @@ class ProcessingThread(QThread):
                  gif_scale=1.0, gif_rotation=0, gif_x=800, gif_y=100, scale_factor=1.1, image_path=None, quality_settings=None,
                  enable_tts=False, tts_voice="zh-CN-XiaoxiaoNeural", tts_volume=100, tts_text="", auto_match_duration=True,
                  enable_dynamic_subtitle=False, animation_style="highlight", animation_intensity=1.5, 
-                 highlight_color="#FFD700", match_mode="fixed"):  # 添加动态字幕参数
+                 highlight_color="#FFD700", match_mode="fixed",
+                 # 添加新的动态字幕参数
+                 dynamic_font_size=70, dynamic_font_color="#FFFFFF", dynamic_outline_size=2, 
+                 dynamic_outline_color="#000000", dynamic_subtitle_x=0, dynamic_subtitle_y=1200):  # 添加动态字幕参数
         super().__init__()
         # 分别存储不同类型的文件
         self.short_videos = short_videos  # 小于9秒的视频
@@ -113,6 +117,13 @@ class ProcessingThread(QThread):
         self.animation_intensity = animation_intensity
         self.highlight_color = highlight_color
         self.match_mode = match_mode
+        # 新增的动态字幕参数
+        self.dynamic_font_size = dynamic_font_size
+        self.dynamic_font_color = dynamic_font_color
+        self.dynamic_outline_size = dynamic_outline_size
+        self.dynamic_outline_color = dynamic_outline_color
+        self.dynamic_subtitle_x = dynamic_subtitle_x
+        self.dynamic_subtitle_y = dynamic_subtitle_y
         
         # 构建按文件名升序排列的文件列表（包括文件和文件夹）
         all_files = []
@@ -1361,8 +1372,8 @@ class VideoProcessorApp(QMainWindow):
         
         # 动态字幕设置组（添加到音乐设置下方）
         dynamic_subtitle_group = QGroupBox("动态字幕设置")
-        dynamic_subtitle_group.setMinimumHeight(150)
-        dynamic_subtitle_group.setMaximumHeight(170)
+        dynamic_subtitle_group.setMinimumHeight(350)  # 增加高度以容纳更多控件和增大间隔
+        dynamic_subtitle_group.setMaximumHeight(370)
         dynamic_subtitle_layout = QGridLayout()
         dynamic_subtitle_layout.setSpacing(6)
         dynamic_subtitle_layout.setContentsMargins(8, 8, 8, 8)
@@ -1399,6 +1410,43 @@ class VideoProcessorApp(QMainWindow):
         self.match_mode_combo.addItem("随机样式", "random")
         self.match_mode_combo.addItem("循环样式", "cycle")
         
+        # 字体大小
+        self.dynamic_font_size = QSpinBox()
+        self.dynamic_font_size.setRange(20, 200)
+        self.dynamic_font_size.setValue(70)
+        self.dynamic_font_size.setToolTip("动态字幕字体大小（像素）")
+        
+        # 字体颜色选择器
+        self.dynamic_font_color = QPushButton()
+        self.dynamic_font_color.setStyleSheet("background-color: #FFFFFF; border: 1px solid #555555; border-radius: 4px; min-height: 24px;")
+        self.dynamic_font_color.clicked.connect(self.select_font_color)
+        self.dynamic_font_color_value = "#FFFFFF"  # 存储实际的颜色值
+        
+        # 描边大小
+        self.dynamic_outline_size = QSpinBox()
+        self.dynamic_outline_size.setRange(0, 10)
+        self.dynamic_outline_size.setValue(2)
+        self.dynamic_outline_size.setToolTip("动态字幕描边大小（像素）")
+        
+        # 描边颜色选择器
+        self.dynamic_outline_color = QPushButton()
+        self.dynamic_outline_color.setStyleSheet("background-color: #000000; border: 1px solid #555555; border-radius: 4px; min-height: 24px;")
+        self.dynamic_outline_color.clicked.connect(self.select_outline_color)
+        self.dynamic_outline_color_value = "#000000"  # 存储实际的颜色值
+        
+        # 字幕X坐标
+        self.dynamic_subtitle_x = QSpinBox()
+        self.dynamic_subtitle_x.setRange(-2000, 2000)
+        self.dynamic_subtitle_x.setValue(0)
+        self.dynamic_subtitle_x.setToolTip("动态字幕X轴坐标（像素）")
+        
+        # 字幕Y坐标
+        self.dynamic_subtitle_y = QSpinBox()
+        self.dynamic_subtitle_y.setRange(-2000, 2000)
+        self.dynamic_subtitle_y.setValue(1200)
+        self.dynamic_subtitle_y.setToolTip("动态字幕Y轴坐标（像素）")
+        
+        # 布局控件，增大间隔
         dynamic_subtitle_layout.addWidget(self.enable_dynamic_subtitle, 0, 0, 1, 2)
         dynamic_subtitle_layout.addWidget(QLabel("动画样式:"), 1, 0)
         dynamic_subtitle_layout.addWidget(self.animation_style_combo, 1, 1)
@@ -1408,6 +1456,27 @@ class VideoProcessorApp(QMainWindow):
         dynamic_subtitle_layout.addWidget(self.highlight_color_combo, 3, 1)
         dynamic_subtitle_layout.addWidget(QLabel("匹配模式:"), 4, 0)
         dynamic_subtitle_layout.addWidget(self.match_mode_combo, 4, 1)
+        
+        # 添加分隔行以增大间隔
+        dynamic_subtitle_layout.addWidget(QLabel("字体设置:"), 5, 0, 1, 2)
+        dynamic_subtitle_layout.addWidget(QLabel("字体大小:"), 6, 0)
+        dynamic_subtitle_layout.addWidget(self.dynamic_font_size, 6, 1)
+        dynamic_subtitle_layout.addWidget(QLabel("字体颜色:"), 7, 0)
+        dynamic_subtitle_layout.addWidget(self.dynamic_font_color, 7, 1)
+        
+        # 添加分隔行以增大间隔
+        dynamic_subtitle_layout.addWidget(QLabel("描边设置:"), 8, 0, 1, 2)
+        dynamic_subtitle_layout.addWidget(QLabel("描边大小:"), 9, 0)
+        dynamic_subtitle_layout.addWidget(self.dynamic_outline_size, 9, 1)
+        dynamic_subtitle_layout.addWidget(QLabel("描边颜色:"), 10, 0)
+        dynamic_subtitle_layout.addWidget(self.dynamic_outline_color, 10, 1)
+        
+        # 添加分隔行以增大间隔
+        dynamic_subtitle_layout.addWidget(QLabel("位置设置:"), 11, 0, 1, 2)
+        dynamic_subtitle_layout.addWidget(QLabel("X坐标:"), 12, 0)
+        dynamic_subtitle_layout.addWidget(self.dynamic_subtitle_x, 12, 1)
+        dynamic_subtitle_layout.addWidget(QLabel("Y坐标:"), 13, 0)
+        dynamic_subtitle_layout.addWidget(self.dynamic_subtitle_y, 13, 1)
         
         dynamic_subtitle_group.setLayout(dynamic_subtitle_layout)
         
@@ -1509,7 +1578,7 @@ class VideoProcessorApp(QMainWindow):
         left_column_layout.addWidget(bg_group)
         left_column_layout.addStretch()
         
-        # 第三列：动态字幕设置、音乐设置
+        # 第三列：智能语音设置、音乐设置
         middle_column_layout = QVBoxLayout()
         middle_column_layout.setSpacing(12)
         middle_column_layout.setContentsMargins(0, 0, 0, 0)
@@ -1520,27 +1589,35 @@ class VideoProcessorApp(QMainWindow):
         
         middle_column_layout.addWidget(material_group)
         middle_column_layout.addWidget(music_group)
-        middle_column_layout.addWidget(dynamic_subtitle_group)  # 添加动态字幕设置
         middle_column_layout.addStretch()
         
-        # 第四列：图片设置、gif动画设置、去水印设置、智能语音设置
+        # 第四列：图片设置、gif动画设置、去水印设置
         right_column_layout.addWidget(img_group)
         right_column_layout.addWidget(gif_group)
         right_column_layout.addWidget(watermark_group)  # 去水印设置放在gif动图设置下方
         right_column_layout.addStretch()
         
-        # 添加三列到主要水平布局
+        # 创建第五列容器
+        fifth_column = QWidget()
+        fifth_column_layout = QVBoxLayout(fifth_column)
+        fifth_column_layout.setSpacing(12)
+        fifth_column_layout.setContentsMargins(0, 0, 0, 0)
+        fifth_column_layout.addWidget(dynamic_subtitle_group)  # 动态字幕设置移到第五列
+        fifth_column_layout.addStretch()
+        
+        # 添加四列到主要水平布局
         right_main_layout.addWidget(left_column)
         right_main_layout.addWidget(middle_column)
         right_main_layout.addWidget(right_column)
+        right_main_layout.addWidget(fifth_column)
         
         # 将左右两侧添加到分栏器
         splitter.addWidget(left_widget)
         splitter.addWidget(right_widget)
         
         # 设置分栏器初始大小
-        # 第一列宽度为原来宽度的70%，第二、三、四列宽度相同
-        splitter.setSizes([245, 875])  # 调整比例以更好地利用空间
+        # 第一列宽度为原来宽度的70%，第二、三、四、五列宽度相同
+        splitter.setSizes([245, 1100])  # 调整比例以更好地利用空间
         
         # 添加分栏器到主布局
         main_layout.addWidget(splitter)
@@ -2199,7 +2276,16 @@ class VideoProcessorApp(QMainWindow):
         highlight_color = self.highlight_color_combo.currentData()
         match_mode = self.match_mode_combo.currentData()
         
+        # 获取新的动态字幕参数
+        dynamic_font_size = self.dynamic_font_size.value()
+        dynamic_font_color = self.dynamic_font_color_value
+        dynamic_outline_size = self.dynamic_outline_size.value()
+        dynamic_outline_color = self.dynamic_outline_color_value
+        dynamic_subtitle_x = self.dynamic_subtitle_x.value()
+        dynamic_subtitle_y = self.dynamic_subtitle_y.value()
+        
         print(f"[动态字幕] 参数设置: 启用={enable_dynamic_subtitle}, 样式={animation_style}, 强度={animation_intensity}, 颜色={highlight_color}, 模式={match_mode}")
+        print(f"[动态字幕] 新参数: 字体大小={dynamic_font_size}, 字体颜色={dynamic_font_color}, 描边大小={dynamic_outline_size}, 描边颜色={dynamic_outline_color}, 坐标=({dynamic_subtitle_x}, {dynamic_subtitle_y})")
         
         # 启动处理线程，传递分类后的文件列表
         self.processing_thread = ProcessingThread(
@@ -2212,7 +2298,10 @@ class VideoProcessorApp(QMainWindow):
             document_path, enable_gif, gif_path, gif_loop_count, gif_scale, self.gif_rotation.value(), gif_x, gif_y, scale_factor, image_path,
             quality_settings,  # 添加质量设置参数
             enable_tts, tts_voice, tts_volume, tts_text, self.auto_match_duration.isChecked(),  # 添加TTS参数和自动匹配时长参数
-            enable_dynamic_subtitle, animation_style, animation_intensity, highlight_color, match_mode  # 添加动态字幕参数
+            enable_dynamic_subtitle, animation_style, animation_intensity, highlight_color, match_mode,  # 添加动态字幕参数
+            # 添加新的动态字幕参数
+            dynamic_font_size, dynamic_font_color, dynamic_outline_size, 
+            dynamic_outline_color, dynamic_subtitle_x, dynamic_subtitle_y
         )
         
         self.processing_thread.progress_updated.connect(self.update_progress)
@@ -2594,6 +2683,17 @@ class VideoProcessorApp(QMainWindow):
         if 0 <= match_mode_idx < self.match_mode_combo.count():
             self.match_mode_combo.setCurrentIndex(match_mode_idx)
         
+        # 加载动态字幕颜色设置
+        dynamic_font_color = self.settings.value("dynamic_font_color", "#FFFFFF", type=str)
+        if dynamic_font_color:
+            self.dynamic_font_color_value = dynamic_font_color
+            self.dynamic_font_color.setStyleSheet(f"background-color: {self.dynamic_font_color_value}; border: 1px solid #555555; border-radius: 4px; min-height: 24px;")
+        
+        dynamic_outline_color = self.settings.value("dynamic_outline_color", "#000000", type=str)
+        if dynamic_outline_color:
+            self.dynamic_outline_color_value = dynamic_outline_color
+            self.dynamic_outline_color.setStyleSheet(f"background-color: {self.dynamic_outline_color_value}; border: 1px solid #555555; border-radius: 4px; min-height: 24px;")
+        
         # 加载质量设置参数
         if hasattr(self, 'crf_value'):
             self.crf_value.setValue(self.settings.value("crf_value", 18, type=int))
@@ -2728,6 +2828,9 @@ class VideoProcessorApp(QMainWindow):
         self.settings.setValue("animation_intensity", self.animation_intensity.value())
         self.settings.setValue("highlight_color_idx", self.highlight_color_combo.currentIndex())
         self.settings.setValue("match_mode_idx", self.match_mode_combo.currentIndex())
+        # 保存动态字幕颜色设置
+        self.settings.setValue("dynamic_font_color", self.dynamic_font_color_value)
+        self.settings.setValue("dynamic_outline_color", self.dynamic_outline_color_value)
         
         # 保存质量设置参数
         if hasattr(self, 'crf_value'):
@@ -2836,6 +2939,20 @@ class VideoProcessorApp(QMainWindow):
         self.music_volume.setEnabled(enabled)
         print(f"【音乐设置】音乐启用状态变化: enabled={enabled}")
 
+    def select_font_color(self):
+        """选择字体颜色"""
+        color = QColorDialog.getColor(QColor(self.dynamic_font_color_value), self, "选择字体颜色")
+        if color.isValid():
+            self.dynamic_font_color_value = color.name().upper()
+            self.dynamic_font_color.setStyleSheet(f"background-color: {self.dynamic_font_color_value}; border: 1px solid #555555; border-radius: 4px; min-height: 24px;")
+    
+    def select_outline_color(self):
+        """选择描边颜色"""
+        color = QColorDialog.getColor(QColor(self.dynamic_outline_color_value), self, "选择描边颜色")
+        if color.isValid():
+            self.dynamic_outline_color_value = color.name().upper()
+            self.dynamic_outline_color.setStyleSheet(f"background-color: {self.dynamic_outline_color_value}; border: 1px solid #555555; border-radius: 4px; min-height: 24px;")
+    
     def select_gif_file(self):
         """选择GIF文件"""
         initial_dir = self.settings.value("last_gif_dir", "")

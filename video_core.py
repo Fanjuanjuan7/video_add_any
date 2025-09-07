@@ -1073,7 +1073,11 @@ def add_subtitle_to_video(video_path, output_path, style=None, subtitle_lang=Non
                     highlight_color=highlight_color,
                     match_mode=match_mode,
                     position_x=position_x,
-                    position_y=position_y
+                    position_y=position_y,
+                    font_size=font_size,  # 使用传入的字体大小参数
+                    font_color="#FFFFFF",  # 默认字体颜色
+                    outline_size=2,        # 默认描边大小
+                    outline_color="#000000"  # 默认描边颜色
                 )
                 print(f"[动态字幕] 动态字幕处理器初始化成功")
             except ImportError as e:

@@ -56,9 +56,14 @@ class DynamicSubtitleSystem:
                 'glow_radius': 5
             }
         }
+        
+        # 添加动画属性
+        self.animation_style = "高亮放大"
+        self.animation_intensity = 1.5
+        self.highlight_color = "#FFD700"
     
     @log_with_capture
-    def extract_text_from_document(self, document_path: str, language: str, row_index: int = None) -> str:
+    def extract_text_from_document(self, document_path: str, language: str, row_index: Optional[int] = None) -> str:
         """
         从文档中提取指定语言的文本
         
@@ -222,7 +227,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             
         except Exception as e:
             print(f"❌ 字幕文件生成失败: {e}")
-            return None
+            return ""
     
     def _seconds_to_ass_time(self, seconds: float) -> str:
         """
@@ -275,7 +280,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             return False
     
     @log_with_capture
-    def create_dynamic_subtitle(self, text, width=800, height=500, font_size=70, output_path=None, tts_audio_path=None):
+    def create_dynamic_subtitle(self, text, width=800, height=500, font_size=70, output_path=None, tts_audio_path=None,
+                               font_color="#FFFFFF", outline_size=2, outline_color="#000000"):
         """
         创建动态字幕文件（ASS格式）
         
@@ -286,6 +292,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             font_size: 字体大小
             output_path: 输出路径
             tts_audio_path: TTS音频文件路径，用于同步分析
+            font_color: 字体颜色 (十六进制格式，如 "#FFFFFF")
+            outline_size: 描边大小
+            outline_color: 描边颜色 (十六进制格式，如 "#000000")
             
         Returns:
             生成的字幕文件路径
@@ -316,7 +325,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 output_path = output_path.replace('.png', '.ass')
             
             # 生成ASS字幕文件
-            ass_content = self._generate_ass_subtitle(text, audio_duration, width, height, font_size)
+            ass_content = self._generate_ass_subtitle(text, audio_duration, width, height, font_size, font_color, outline_size, outline_color)
             
             # 写入文件
             with open(output_path, 'w', encoding='utf-8') as f:
@@ -327,9 +336,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 
         except Exception as e:
             print(f"创建动态字幕失败: {e}")
-            return None
+            return ""
     
-    def _generate_ass_subtitle(self, text, duration, width, height, font_size):
+    def _generate_ass_subtitle(self, text, duration, width, height, font_size, font_color="#FFFFFF", outline_size=2, outline_color="#000000"):
         """
         生成ASS格式的动态字幕内容
         
@@ -339,10 +348,25 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             width: 视频宽度
             height: 视频高度
             font_size: 字体大小
+            font_color: 字体颜色 (十六进制格式，如 "#FFFFFF")
+            outline_size: 描边大小
+            outline_color: 描边颜色 (十六进制格式，如 "#000000")
             
         Returns:
             ASS字幕文件内容
         """
+        # 将十六进制颜色转换为ASS格式 (&HBBGGRR格式)
+        def hex_to_ass_color(hex_color):
+            if hex_color.startswith('#'):
+                hex_color = hex_color[1:]
+            if len(hex_color) == 6:
+                # 转换为 &HBBGGRR 格式
+                return f"&H{hex_color[4:6]}{hex_color[2:4]}{hex_color[0:2]}"
+            return "&HFFFFFF"  # 默认白色
+            
+        primary_color = hex_to_ass_color(font_color)
+        outline_color_ass = hex_to_ass_color(outline_color)
+        
         # ASS文件头部
         ass_header = f"""[Script Info]
 Title: Dynamic Subtitle
@@ -355,10 +379,10 @@ PlayResY: {height}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1
-Style: Highlight,Arial,{int(font_size * 1.2)},&H0000D7FF,&H000000FF,&H00000000,&H80000000,1,0,0,0,110,110,0,0,1,3,3,2,10,10,10,1
-Style: Bounce,Arial,{font_size},&H00FFD700,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1
-Style: Glow,Arial,{font_size},&H0000D7FF,&H000000FF,&H00FFD700,&H80000000,0,0,0,0,100,100,0,0,1,3,3,2,10,10,10,1
+Style: Default,Arial,{font_size},{primary_color},&H000000FF,{outline_color_ass},&H80000000,0,0,0,0,100,100,0,0,1,{outline_size},0,2,10,10,10,1
+Style: Highlight,Arial,{int(font_size * 1.2)},{primary_color},&H000000FF,{outline_color_ass},&H80000000,1,0,0,0,110,110,0,0,1,{outline_size+1},0,2,10,10,10,1
+Style: Bounce,Arial,{font_size},{primary_color},&H000000FF,{outline_color_ass},&H80000000,0,0,0,0,100,100,0,0,1,{outline_size},0,2,10,10,10,1
+Style: Glow,Arial,{font_size},{primary_color},&H000000FF,{outline_color_ass},&H80000000,0,0,0,0,100,100,0,0,1,{outline_size+1},0,2,10,10,10,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -385,13 +409,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             # 根据动画样式选择样式和效果
             if animation_style == "高亮放大":
                 style = "Highlight"
-                effect = f"{{\\t(0,200,\\fscx120\\fscy120\\c&H0000D7FF&)\\t(200,400,\\fscx100\\fscy100\\c&HFFFFFF&)}}"
+                effect = f"{{\\t(0,200,\\fscx120\\fscy120\\c{hex_to_ass_color(getattr(self, 'highlight_color', '#FFD700'))}&)\\t(200,400,\\fscx100\\fscy100\\c{primary_color}&)}}"
             elif animation_style == "弹跳效果":
                 style = "Bounce"
                 effect = f"{{\\move({width//2},{height-100},{width//2},{height-120},0,200)\\move({width//2},{height-120},{width//2},{height-100},200,400)}}"
             elif animation_style == "发光效果":
                 style = "Glow"
-                effect = f"{{\\t(0,200,\\3c&H00FFD7&\\3a&H00&)\\t(200,400,\\3c&H000000&\\3a&H80&)}}"
+                highlight_color = hex_to_ass_color(getattr(self, 'highlight_color', '#FFD700'))
+                effect = f"{{\\t(0,200,\\3c{highlight_color}&\\3a&H00&)\\t(200,400,\\3c{outline_color_ass}&\\3a&H80&)}}"
             else:
                 style = "Default"
                 effect = ""
@@ -408,30 +433,39 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         
         return ass_header + "\n".join(events)
     
-    def _seconds_to_ass_time(self, seconds):
+    def _split_text_to_words(self, text: str) -> List[str]:
         """
-        将秒数转换为ASS时间格式 (H:MM:SS.CC)
-        """
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        secs = seconds % 60
-        return f"{hours}:{minutes:02d}:{secs:05.2f}"
-    
-    def _split_text_to_words(self, text):
-        """
-        将文本分割为单词/字符
+        将文本分割为单词或字符
         """
         import re
         
-        # 中文按字符分割，英文按单词分割
-        if re.search(r'[\u4e00-\u9fff]', text):
-            # 包含中文，按字符分割
+        # 检测是否包含中文字符
+        chinese_pattern = re.compile(r'[\u4e00-\u9fff]')
+        has_chinese = bool(chinese_pattern.search(text))
+        
+        if has_chinese:
+            # 中文按字符分割，保留标点符号
             words = []
+            current_word = ""
+            
             for char in text:
-                if char.strip():  # 跳过空白字符
+                if char.isspace():
+                    if current_word:
+                        words.append(current_word)
+                        current_word = ""
+                elif char in '，。！？；：、':
+                    if current_word:
+                        words.append(current_word)
+                        current_word = ""
                     words.append(char)
+                else:
+                    current_word += char
+            
+            # 添加最后一个单词
+            if current_word:
+                words.append(current_word)
         else:
-            # 纯英文，按单词分割
+            # 英文按空格分割
             words = text.split()
         
         return words
@@ -503,43 +537,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             return self.analyze_text_timing(text, estimated_duration, 'chinese')
         
         return timing_info
-    
-    def _split_text_to_words(self, text: str) -> List[str]:
-        """
-        将文本分割为单词或字符
-        """
-        import re
-        
-        # 检测是否包含中文字符
-        chinese_pattern = re.compile(r'[\u4e00-\u9fff]')
-        has_chinese = bool(chinese_pattern.search(text))
-        
-        if has_chinese:
-            # 中文按字符分割，保留标点符号
-            words = []
-            current_word = ""
-            
-            for char in text:
-                if char.isspace():
-                    if current_word:
-                        words.append(current_word)
-                        current_word = ""
-                elif char in '，。！？；：、':
-                    if current_word:
-                        words.append(current_word)
-                        current_word = ""
-                    words.append(char)
-                else:
-                    current_word += char
-            
-            # 添加最后一个单词
-            if current_word:
-                words.append(current_word)
-        else:
-            # 英文按空格分割
-            words = text.split()
-        
-        return words
     
     def _load_font(self, font_size: int):
         """
@@ -731,7 +728,8 @@ class DynamicSubtitleProcessor:
     用于与video_core.py集成
     """
     
-    def __init__(self, animation_style="高亮放大", animation_intensity=1.5, highlight_color="#FFD700", match_mode="指定样式", position_x=50, position_y=50):
+    def __init__(self, animation_style="高亮放大", animation_intensity=1.5, highlight_color="#FFD700", match_mode="指定样式", position_x=50, position_y=50,
+                 font_size=70, font_color="#FFFFFF", outline_size=2, outline_color="#000000"):
         self.system = DynamicSubtitleSystem()
         self.animation_style = animation_style
         self.animation_intensity = animation_intensity
@@ -741,6 +739,11 @@ class DynamicSubtitleProcessor:
         self.position_y = position_y  # Y坐标位置（百分比，0-100）
         self.style_cycle_index = 0  # 用于循环样式模式
         self.available_styles = ["高亮放大", "弹跳效果", "发光效果"]
+        # 新增的字体和样式参数
+        self.font_size = font_size
+        self.font_color = font_color
+        self.outline_size = outline_size
+        self.outline_color = outline_color
     
     def _get_animation_style_for_word(self, word_index):
         """
@@ -795,10 +798,14 @@ class DynamicSubtitleProcessor:
             
         return subtitle_events
     
-    def create_dynamic_subtitle(self, text, width=800, height=500, font_size=70, output_path=None, tts_audio_path=None):
+    def create_dynamic_subtitle(self, text, width=800, height=500, font_size=None, output_path=None, tts_audio_path=None):
         """
         创建动态字幕
         """
+        # 使用传入的font_size参数，如果没有传入则使用实例变量
+        if font_size is None:
+            font_size = self.font_size
+            
         # 设置动画参数
         self.system.animation_style = self.animation_style
         self.system.animation_intensity = self.animation_intensity
@@ -810,7 +817,10 @@ class DynamicSubtitleProcessor:
             height=height,
             font_size=font_size,
             output_path=output_path,
-            tts_audio_path=tts_audio_path
+            tts_audio_path=tts_audio_path,
+            font_color=self.font_color,
+            outline_size=self.outline_size,
+            outline_color=self.outline_color
         )
 
 
