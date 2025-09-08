@@ -9,10 +9,16 @@ import os
 import sys
 import json
 import subprocess  # 添加subprocess导入
+import shutil  # 添加shutil导入
 from pathlib import Path
 import random
 import configparser
 import pandas as pd
+
+import sys
+import os
+# 将当前目录添加到Python路径中，确保可以正确导入模块
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # 将所有PyQt5导入放在一个try块中
 try:
@@ -33,15 +39,18 @@ except ImportError as e:
 
 # 确认必要的库导入
 try:
-    # 导入处理函数
-    from video_core import process_video
-    from utils import load_style_config, get_data_path
+    # 导入处理函数 - 使用新的video.py模块
+    from video import process_video, batch_process_videos
+    from utils import load_style_config, get_data_path, find_matching_image
+    from video_helpers import get_tts_text_for_video
     # 导入日志管理器
     from log_manager import init_logging, get_log_manager
     import logging
 except ImportError as e:
     print(f"错误: {e}")
-    print("请确保video_core.py和utils.py在当前目录或Python路径中")
+    print("请确保video.py和utils.py在当前目录或Python路径中")
+    sys.exit(1)
+
     sys.exit(1)
 
 
@@ -145,7 +154,9 @@ class ProcessingThread(QThread):
         import time
         import tempfile
         from pathlib import Path
-        from video_core import process_video, process_folder_videos, preprocess_video_by_type, preprocess_video_without_reverse
+        # 使用新的模块结构而不是旧的video_core.py
+        from video import process_video
+        from video_preprocessing import process_folder_videos, preprocess_video_by_type, preprocess_video_without_reverse
         
         start_time = time.time()
         
@@ -254,7 +265,6 @@ class ProcessingThread(QThread):
                             print(f"❌ 短视频预处理失败: {Path(video_path).name}")
                             # 预处理失败时清理临时目录
                             try:
-                                import shutil
                                 shutil.rmtree(temp_dir)
                             except:
                                 pass
@@ -264,7 +274,6 @@ class ProcessingThread(QThread):
                         print(f"❌ 短视频预处理异常: {Path(video_path).name} - {str(video_error)}")
                         # 异常时清理临时目录
                         try:
-                            import shutil
                             shutil.rmtree(temp_dir)
                         except:
                             pass
@@ -310,7 +319,6 @@ class ProcessingThread(QThread):
                             print(f"❌ 长视频预处理失败: {Path(video_path).name}")
                             # 预处理失败时清理临时目录
                             try:
-                                import shutil
                                 shutil.rmtree(temp_dir)
                             except:
                                 pass
@@ -320,7 +328,6 @@ class ProcessingThread(QThread):
                         print(f"❌ 长视频预处理异常: {Path(video_path).name} - {str(preprocess_error)}")
                         # 异常时清理临时目录
                         try:
-                            import shutil
                             shutil.rmtree(temp_dir)
                         except:
                             pass
@@ -493,7 +500,6 @@ class ProcessingThread(QThread):
                         # 无论成功还是失败，都清理临时目录
                         if 'temp_dir' in video_info:
                             try:
-                                import shutil
                                 shutil.rmtree(video_info['temp_dir'])
                                 print(f"已清理临时目录: {video_info['temp_dir']}")
                             except Exception as exc:
@@ -514,7 +520,6 @@ class ProcessingThread(QThread):
                     # 异常时也清理临时目录
                     if 'temp_dir' in video_info:
                         try:
-                            import shutil
                             shutil.rmtree(video_info['temp_dir'])
                             print(f"已清理临时目录: {video_info['temp_dir']}")
                         except Exception as exc:
@@ -565,15 +570,17 @@ class ProcessingThread(QThread):
             self.processing_complete.emit(False, stats)
             
         finally:
-            # 无论成功还是失败，都清理所有临时目录
+            # 无论成功还是失败，都清理所有临时目录，添加异常处理
             for video_info in preprocessed_videos:
                 if 'temp_dir' in video_info:
                     try:
-                        import shutil
-                        shutil.rmtree(video_info['temp_dir'])
-                        print(f"已清理临时目录: {video_info['temp_dir']}")
+                        temp_dir_path = Path(video_info['temp_dir'])
+                        if temp_dir_path.exists():
+                            shutil.rmtree(temp_dir_path)
+                            print(f"已清理临时目录: {video_info['temp_dir']}")
                     except Exception as exc:
                         print(f"清理临时目录失败: {exc}")
+                        # 不抛出异常，避免影响主流程
 
 class VideoProcessorApp(QMainWindow):
     """视频处理应用主窗口"""

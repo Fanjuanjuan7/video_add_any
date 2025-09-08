@@ -86,7 +86,13 @@ VideoApp支持使用Microsoft Edge TTS（文本转语音）技术为视频添加
 VideoApp/
 ├── main.py                 # 应用程序入口
 ├── video_app_gui.py        # GUI界面实现
-├── video_core.py           # 核心视频处理逻辑
+├── video/                  # 视频处理模块目录
+│   ├── __init__.py         # 模块初始化文件
+│   ├── video.py            # 视频处理主协调模块
+│   ├── video_background.py # 背景和图像处理模块
+│   ├── video_audio.py      # 音频处理模块
+│   ├── video_subtitle.py   # 字幕处理模块
+│   └── video_preprocessing.py # 视频预处理模块
 ├── utils.py                # 工具函数
 ├── log_manager.py          # 日志管理
 ├── backup_manager.py       # 备份管理
