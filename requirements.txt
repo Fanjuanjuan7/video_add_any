@@ -10,3 +10,4 @@ six==1.17.0
 tzdata==2025.2
 edge-tts==7.2.3
 opencv-python==4.10.0.84
+librosa==0.10.2

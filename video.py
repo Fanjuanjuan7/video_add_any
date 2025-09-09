@@ -18,14 +18,17 @@ from utils import get_video_info, get_audio_duration, run_ffmpeg_command, get_da
 # 导入各功能模块
 from video_background import create_rounded_rect_background, process_image_for_overlay, create_subtitle_image
 from video_audio import trim_music_to_video_duration, add_tts_audio_to_video, generate_subtitle_tts
-from video_subtitle import add_subtitle_to_video
 from video_preprocessing import preprocess_video_by_type
+from video_subtitle_processor import VideoSubtitleProcessor
 
 # 导入日志管理器
 from log_manager import init_logging, log_with_capture
 
 # 初始化日志系统
 log_manager = init_logging()
+
+# 创建全局字幕处理器实例
+_subtitle_processor = VideoSubtitleProcessor()
 
 
 @log_with_capture
@@ -190,7 +193,8 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
         print(f"  - 传递music_volume: {music_volume}")
         print(f"  - 视频索引: {video_index}")
         
-        final_path = add_subtitle_to_video(
+        # 使用新的VideoSubtitleProcessor类
+        final_path = _subtitle_processor.add_subtitle_to_video(
             processed_path, 
             output_path, 
             style, 

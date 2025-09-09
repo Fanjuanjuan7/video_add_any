@@ -12,6 +12,7 @@ VideoApp是一个功能强大的视频处理应用程序，支持在Windows和ma
 - 📊 批量处理多个视频文件
 - 🌐 跨平台支持（Windows和macOS）
 - 🗣️ 智能配音功能（支持Microsoft Edge TTS）
+- 🎵 音频分析和处理（使用librosa库）
 
 ## 系统要求
 - Python 3.7或更高版本
@@ -47,6 +48,12 @@ brew install ffmpeg
 
 #### Windows:
 从 https://ffmpeg.org/download.html 下载并安装FFmpeg
+
+### 5. 安装额外依赖（可选，用于音频分析功能）
+某些高级音频分析功能需要额外的依赖项：
+```bash
+pip install librosa
+```
 
 ## 使用方法
 
@@ -91,7 +98,7 @@ VideoApp/
 │   ├── video.py            # 视频处理主协调模块
 │   ├── video_background.py # 背景和图像处理模块
 │   ├── video_audio.py      # 音频处理模块
-│   ├── video_subtitle.py   # 字幕处理模块
+│   ├── video_subtitle_processor.py   # 字幕处理模块（重构后的版本）
 │   └── video_preprocessing.py # 视频预处理模块
 ├── utils.py                # 工具函数
 ├── log_manager.py          # 日志管理

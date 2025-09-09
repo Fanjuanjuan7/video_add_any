@@ -2302,7 +2302,7 @@ class VideoProcessorApp(QMainWindow):
             self.subtitle_text_x.value(), self.subtitle_text_y.value(),
             random_position, enable_subtitle, enable_background, enable_image,
             enable_music, music_path, music_mode, music_volume,
-            document_path, enable_gif, gif_path, gif_loop_count, gif_scale, self.gif_rotation.value(), gif_x, gif_y, scale_factor, image_path,
+            document_path, enable_gif, gif_path, gif_loop_count, gif_scale, self.gif_rotation.value(), self.gif_x.value(), self.gif_y.value(), scale_factor, image_path,
             quality_settings,  # 添加质量设置参数
             enable_tts, tts_voice, tts_volume, tts_text, self.auto_match_duration.isChecked(),  # 添加TTS参数和自动匹配时长参数
             enable_dynamic_subtitle, animation_style, animation_intensity, highlight_color, match_mode,  # 添加动态字幕参数
