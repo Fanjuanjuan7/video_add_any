@@ -72,7 +72,8 @@ class ProcessingThread(QThread):
                  highlight_color="#FFD700", match_mode="fixed",
                  # 添加新的动态字幕参数
                  dynamic_font_size=70, dynamic_font_color="#FFFFFF", dynamic_outline_size=2, 
-                 dynamic_outline_color="#000000", dynamic_subtitle_x=0, dynamic_subtitle_y=1200):  # 添加动态字幕参数
+                 dynamic_outline_color="#000000", dynamic_subtitle_x=0, dynamic_subtitle_y=1200,
+                 animation_duration=0.3, opacity=100):  # 添加动态字幕参数
         super().__init__()
         # 分别存储不同类型的文件
         self.short_videos = short_videos  # 小于9秒的视频
@@ -133,6 +134,9 @@ class ProcessingThread(QThread):
         self.dynamic_outline_color = dynamic_outline_color
         self.dynamic_subtitle_x = dynamic_subtitle_x
         self.dynamic_subtitle_y = dynamic_subtitle_y
+        # 新增的高级动态字幕参数
+        self.animation_duration = animation_duration
+        self.opacity = opacity
         
         # 构建按文件名升序排列的文件列表（包括文件和文件夹）
         all_files = []
@@ -1379,8 +1383,8 @@ class VideoProcessorApp(QMainWindow):
         
         # 动态字幕设置组（添加到音乐设置下方）
         dynamic_subtitle_group = QGroupBox("动态字幕设置")
-        dynamic_subtitle_group.setMinimumHeight(350)  # 增加高度以容纳更多控件和增大间隔
-        dynamic_subtitle_group.setMaximumHeight(370)
+        dynamic_subtitle_group.setMinimumHeight(450)  # 增加高度以容纳更多控件和增大间隔
+        dynamic_subtitle_group.setMaximumHeight(470)
         dynamic_subtitle_layout = QGridLayout()
         dynamic_subtitle_layout.setSpacing(6)
         dynamic_subtitle_layout.setContentsMargins(8, 8, 8, 8)
@@ -1395,6 +1399,8 @@ class VideoProcessorApp(QMainWindow):
         self.animation_style_combo.addItem("高亮放大", "highlight")
         self.animation_style_combo.addItem("弹跳效果", "bounce")
         self.animation_style_combo.addItem("发光效果", "glow")
+        self.animation_style_combo.addItem("打字机效果", "typewriter")
+        self.animation_style_combo.addItem("滑入效果", "slide")
         
         # 动画强度调节
         self.animation_intensity = QDoubleSpinBox()
@@ -1453,6 +1459,21 @@ class VideoProcessorApp(QMainWindow):
         self.dynamic_subtitle_y.setValue(1200)
         self.dynamic_subtitle_y.setToolTip("动态字幕Y轴坐标（像素）")
         
+        # 动画持续时间
+        self.animation_duration = QDoubleSpinBox()
+        self.animation_duration.setRange(0.1, 2.0)
+        self.animation_duration.setValue(0.3)
+        self.animation_duration.setSingleStep(0.1)
+        self.animation_duration.setDecimals(1)
+        self.animation_duration.setToolTip("每个单词动画持续时间（秒）")
+        
+        # 透明度调节
+        self.dynamic_opacity = QSpinBox()
+        self.dynamic_opacity.setRange(0, 100)
+        self.dynamic_opacity.setValue(100)
+        self.dynamic_opacity.setSuffix("%")
+        self.dynamic_opacity.setToolTip("动态字幕透明度")
+        
         # 布局控件，增大间隔
         dynamic_subtitle_layout.addWidget(self.enable_dynamic_subtitle, 0, 0, 1, 2)
         dynamic_subtitle_layout.addWidget(QLabel("动画样式:"), 1, 0)
@@ -1484,6 +1505,12 @@ class VideoProcessorApp(QMainWindow):
         dynamic_subtitle_layout.addWidget(self.dynamic_subtitle_x, 12, 1)
         dynamic_subtitle_layout.addWidget(QLabel("Y坐标:"), 13, 0)
         dynamic_subtitle_layout.addWidget(self.dynamic_subtitle_y, 13, 1)
+        
+        # 添加新的参数设置
+        dynamic_subtitle_layout.addWidget(QLabel("动画时长:"), 14, 0)
+        dynamic_subtitle_layout.addWidget(self.animation_duration, 14, 1)
+        dynamic_subtitle_layout.addWidget(QLabel("透明度:"), 15, 0)
+        dynamic_subtitle_layout.addWidget(self.dynamic_opacity, 15, 1)
         
         dynamic_subtitle_group.setLayout(dynamic_subtitle_layout)
         
@@ -2290,9 +2317,12 @@ class VideoProcessorApp(QMainWindow):
         dynamic_outline_color = self.dynamic_outline_color_value
         dynamic_subtitle_x = self.dynamic_subtitle_x.value()
         dynamic_subtitle_y = self.dynamic_subtitle_y.value()
+        animation_duration = self.animation_duration.value()
+        dynamic_opacity = self.dynamic_opacity.value()
         
         print(f"[动态字幕] 参数设置: 启用={enable_dynamic_subtitle}, 样式={animation_style}, 强度={animation_intensity}, 颜色={highlight_color}, 模式={match_mode}")
         print(f"[动态字幕] 新参数: 字体大小={dynamic_font_size}, 字体颜色={dynamic_font_color}, 描边大小={dynamic_outline_size}, 描边颜色={dynamic_outline_color}, 坐标=({dynamic_subtitle_x}, {dynamic_subtitle_y})")
+        print(f"[动态字幕] 高级参数: 动画时长={animation_duration}, 透明度={dynamic_opacity}")
         
         # 启动处理线程，传递分类后的文件列表
         self.processing_thread = ProcessingThread(
@@ -2308,7 +2338,8 @@ class VideoProcessorApp(QMainWindow):
             enable_dynamic_subtitle, animation_style, animation_intensity, highlight_color, match_mode,  # 添加动态字幕参数
             # 添加新的动态字幕参数
             dynamic_font_size, dynamic_font_color, dynamic_outline_size, 
-            dynamic_outline_color, dynamic_subtitle_x, dynamic_subtitle_y
+            dynamic_outline_color, dynamic_subtitle_x, dynamic_subtitle_y,
+            animation_duration, dynamic_opacity
         )
         
         self.processing_thread.progress_updated.connect(self.update_progress)

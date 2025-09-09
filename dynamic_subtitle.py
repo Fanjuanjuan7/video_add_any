@@ -54,6 +54,21 @@ class DynamicSubtitleSystem:
                 'highlight_color': '#4ECDC4',
                 'transition_duration': 0.25,
                 'glow_radius': 5
+            },
+            'typewriter': {
+                'name': '打字机效果',
+                'description': '逐字显示效果',
+                'typing_speed': 0.1,
+                'highlight_color': '#FFD700',
+                'transition_duration': 0.1
+            },
+            'slide': {
+                'name': '滑入效果',
+                'description': '从一侧滑入',
+                'slide_direction': 'left',
+                'slide_speed': 0.3,
+                'highlight_color': '#9B59B6',
+                'transition_duration': 0.3
             }
         }
         
@@ -280,8 +295,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             return False
     
     @log_with_capture
-    def create_dynamic_subtitle(self, text, width=800, height=500, font_size=70, output_path=None, tts_audio_path=None,
-                               font_color="#FFFFFF", outline_size=2, outline_color="#000000"):
+    def create_dynamic_subtitle(self, text, width=800, height=500, font_size=None, output_path=None, tts_audio_path=None,
+                               font_color="#FFFFFF", outline_size=2, outline_color="#000000", animation_duration=0.3, opacity=100):
         """
         创建动态字幕文件（ASS格式）
         
@@ -325,7 +340,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 output_path = output_path.replace('.png', '.ass')
             
             # 生成ASS字幕文件
-            ass_content = self._generate_ass_subtitle(text, audio_duration, width, height, font_size, font_color, outline_size, outline_color)
+            ass_content = self._generate_ass_subtitle(text, audio_duration, width, height, font_size, font_color, outline_size, outline_color, animation_duration, opacity)
             
             # 写入文件
             with open(output_path, 'w', encoding='utf-8') as f:
@@ -338,7 +353,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             print(f"创建动态字幕失败: {e}")
             return ""
     
-    def _generate_ass_subtitle(self, text, duration, width, height, font_size, font_color="#FFFFFF", outline_size=2, outline_color="#000000"):
+    def _generate_ass_subtitle(self, text, duration, width, height, font_size, font_color="#FFFFFF", outline_size=2, outline_color="#000000", animation_duration=0.3, opacity=100):
         """
         生成ASS格式的动态字幕内容
         
@@ -351,6 +366,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             font_color: 字体颜色 (十六进制格式，如 "#FFFFFF")
             outline_size: 描边大小
             outline_color: 描边颜色 (十六进制格式，如 "#000000")
+            animation_duration: 动画持续时间
+            opacity: 透明度 (0-100)
             
         Returns:
             ASS字幕文件内容
@@ -367,6 +384,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         primary_color = hex_to_ass_color(font_color)
         outline_color_ass = hex_to_ass_color(outline_color)
         
+        # 计算透明度值 (&HAA格式，00为不透明，FF为完全透明)
+        alpha_value = f"{255 - int(255 * opacity / 100):02X}"
+        primary_color_with_alpha = f"&H{alpha_value}{primary_color[2:]}"
+        outline_color_with_alpha = f"&H{alpha_value}{outline_color_ass[2:]}"
+        
         # ASS文件头部
         ass_header = f"""[Script Info]
 Title: Dynamic Subtitle
@@ -379,10 +401,12 @@ PlayResY: {height}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,{font_size},{primary_color},&H000000FF,{outline_color_ass},&H80000000,0,0,0,0,100,100,0,0,1,{outline_size},0,2,10,10,10,1
-Style: Highlight,Arial,{int(font_size * 1.2)},{primary_color},&H000000FF,{outline_color_ass},&H80000000,1,0,0,0,110,110,0,0,1,{outline_size+1},0,2,10,10,10,1
-Style: Bounce,Arial,{font_size},{primary_color},&H000000FF,{outline_color_ass},&H80000000,0,0,0,0,100,100,0,0,1,{outline_size},0,2,10,10,10,1
-Style: Glow,Arial,{font_size},{primary_color},&H000000FF,{outline_color_ass},&H80000000,0,0,0,0,100,100,0,0,1,{outline_size+1},0,2,10,10,10,1
+Style: Default,Arial,{font_size},{primary_color_with_alpha},&H000000FF,{outline_color_with_alpha},&H80000000,0,0,0,0,100,100,0,0,1,{outline_size},0,2,10,10,10,1
+Style: Highlight,Arial,{int(font_size * 1.2)},{primary_color_with_alpha},&H000000FF,{outline_color_with_alpha},&H80000000,1,0,0,0,110,110,0,0,1,{outline_size+1},0,2,10,10,10,1
+Style: Bounce,Arial,{font_size},{primary_color_with_alpha},&H000000FF,{outline_color_with_alpha},&H80000000,0,0,0,0,100,100,0,0,1,{outline_size},0,2,10,10,10,1
+Style: Glow,Arial,{font_size},{primary_color_with_alpha},&H000000FF,{outline_color_with_alpha},&H80000000,0,0,0,0,100,100,0,0,1,{outline_size+1},0,2,10,10,10,1
+Style: Typewriter,Arial,{font_size},{primary_color_with_alpha},&H000000FF,{outline_color_with_alpha},&H80000000,0,0,0,0,100,100,0,0,1,{outline_size},0,2,10,10,10,1
+Style: Slide,Arial,{font_size},{primary_color_with_alpha},&H000000FF,{outline_color_with_alpha},&H80000000,0,0,0,0,100,100,0,0,1,{outline_size},0,2,10,10,10,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -409,14 +433,23 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             # 根据动画样式选择样式和效果
             if animation_style == "高亮放大":
                 style = "Highlight"
-                effect = f"{{\\t(0,200,\\fscx120\\fscy120\\c{hex_to_ass_color(getattr(self, 'highlight_color', '#FFD700'))}&)\\t(200,400,\\fscx100\\fscy100\\c{primary_color}&)}}"
+                effect = f"{{\\t(0,{int(animation_duration*500)},\\fscx120\\fscy120\\c{hex_to_ass_color(getattr(self, 'highlight_color', '#FFD700'))}&)\\t({int(animation_duration*500)},{int(animation_duration*1000)},\\fscx100\\fscy100\\c{primary_color_with_alpha}&)}}"
             elif animation_style == "弹跳效果":
                 style = "Bounce"
-                effect = f"{{\\move({width//2},{height-100},{width//2},{height-120},0,200)\\move({width//2},{height-120},{width//2},{height-100},200,400)}}"
+                bounce_height = int(10 * getattr(self, 'animation_intensity', 1.5))
+                effect = f"{{\\move({width//2},{height-100},{width//2},{height-100-bounce_height},0,{int(animation_duration*500)})\\move({width//2},{height-100-bounce_height},{width//2},{height-100},{int(animation_duration*500)},{int(animation_duration*1000)})}}"
             elif animation_style == "发光效果":
                 style = "Glow"
                 highlight_color = hex_to_ass_color(getattr(self, 'highlight_color', '#FFD700'))
-                effect = f"{{\\t(0,200,\\3c{highlight_color}&\\3a&H00&)\\t(200,400,\\3c{outline_color_ass}&\\3a&H80&)}}"
+                effect = f"{{\\t(0,{int(animation_duration*500)},\\3c{highlight_color}&\\3a&H00&)\\t({int(animation_duration*500)},{int(animation_duration*1000)},\\3c{outline_color_with_alpha}&\\3a&H80&)}}"
+            elif animation_style == "打字机效果":
+                style = "Typewriter"
+                # 打字机效果通过逐字显示实现
+                effect = f"{{\\alpha&HFF&\\t(0,{int(animation_duration*1000)},\\alpha&H00&)}}"
+            elif animation_style == "滑入效果":
+                style = "Slide"
+                # 从左侧滑入效果
+                effect = f"{{\\pos({-100},{height-100})\\t(0,{int(animation_duration*1000)},\\pos({width//2},{height-100}))}}"
             else:
                 style = "Default"
                 effect = ""
@@ -729,7 +762,7 @@ class DynamicSubtitleProcessor:
     """
     
     def __init__(self, animation_style="高亮放大", animation_intensity=1.5, highlight_color="#FFD700", match_mode="指定样式", position_x=50, position_y=50,
-                 font_size=70, font_color="#FFFFFF", outline_size=2, outline_color="#000000"):
+                 font_size=70, font_color="#FFFFFF", outline_size=2, outline_color="#000000", animation_duration=0.3, opacity=100):
         self.system = DynamicSubtitleSystem()
         self.animation_style = animation_style
         self.animation_intensity = animation_intensity
@@ -738,12 +771,15 @@ class DynamicSubtitleProcessor:
         self.position_x = position_x  # X坐标位置（百分比，0-100）
         self.position_y = position_y  # Y坐标位置（百分比，0-100）
         self.style_cycle_index = 0  # 用于循环样式模式
-        self.available_styles = ["高亮放大", "弹跳效果", "发光效果"]
+        self.available_styles = ["高亮放大", "弹跳效果", "发光效果", "打字机效果", "滑入效果"]
         # 新增的字体和样式参数
         self.font_size = font_size
         self.font_color = font_color
         self.outline_size = outline_size
         self.outline_color = outline_color
+        # 新增的动画参数
+        self.animation_duration = animation_duration
+        self.opacity = opacity
     
     def _get_animation_style_for_word(self, word_index):
         """
@@ -820,7 +856,9 @@ class DynamicSubtitleProcessor:
             tts_audio_path=tts_audio_path,
             font_color=self.font_color,
             outline_size=self.outline_size,
-            outline_color=self.outline_color
+            outline_color=self.outline_color,
+            animation_duration=self.animation_duration,
+            opacity=self.opacity
         )
 
 

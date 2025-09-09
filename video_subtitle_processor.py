@@ -156,7 +156,7 @@ class VideoSubtitleProcessor:
             )
             
             # 8. 处理字幕素材
-            subtitle_img, bg_img = self._process_subtitle_materials(
+            subtitle_img, bg_img, subtitle_ass_path, use_ass_subtitle = self._process_subtitle_materials(  # 修改返回值
                 enable_subtitle, subtitle_df, subtitle_lang, video_index, style, font_size, subtitle_width,
                 bg_width, bg_height, temp_dir, dynamic_processor, progress_callback
             )
@@ -177,7 +177,8 @@ class VideoSubtitleProcessor:
                 bg_width, bg_height, subtitle_x, subtitle_y,
                 gif_x, gif_y,
                 music_volume, quality_settings, quicktime_compatible,
-                progress_callback, selected_music_path is not None
+                progress_callback, selected_music_path is not None,
+                subtitle_ass_path, use_ass_subtitle  # 传递ASS字幕相关信息
             )
             
             if result:
@@ -760,7 +761,7 @@ class VideoSubtitleProcessor:
             print(f"stderr: {e.stderr.decode()}")
             return None
         except Exception as e:
-            print(f"【GIF动画处理】处理异常: {e}")
+            print(f"【GIFアニメーション処理】処理異常: {e}")
             return None
     
     def _process_subtitle_materials(self, enable_subtitle, subtitle_df, subtitle_lang, video_index, style,
@@ -772,6 +773,8 @@ class VideoSubtitleProcessor:
             
         subtitle_img = None
         bg_img = None
+        subtitle_ass_path = None  # 添加ASS字幕文件路径变量
+        use_ass_subtitle = False  # 添加ASS字幕使用标志
         
         if enable_subtitle and subtitle_df is not None:
             # 根据语言和视频索引选择对应的字幕
@@ -856,26 +859,43 @@ class VideoSubtitleProcessor:
             subtitle_height = 500  # 字幕高度
             subtitle_img_path = temp_dir / "subtitle.png"
             
-            # 调试信息：打印字体大小
-            print(f"ขนาดตัวอักษรที่ส่งไปยัง create_subtitle_image: {font_size}")
+            # 调试情報：打印フォントサイズ
+            print(f"サイズตัวอักษรที่ส่งไปยัง create_subtitle_image: {font_size}")
             
-            # 检查是否使用动态字幕
+            # 検査動的字幕を使用するか
             if dynamic_processor:
-                print(f"[动态字幕] 使用动态字幕处理器生成字幕")
-                # 使用动态字幕处理器生成字幕图片
-                subtitle_img = dynamic_processor.create_dynamic_subtitle(
+                print(f"[動的字幕] 動的字幕プロセッサーを使用して字幕を生成")
+                # 動的字幕プロセッサーを使用して字幕（ASSファイルパスを返す）
+                subtitle_ass_path = dynamic_processor.create_dynamic_subtitle(
                     text=subtitle_text,
                     width=subtitle_width,
                     height=subtitle_height,
-                    font_size=font_size,
-                    output_path=str(subtitle_img_path)
+                    font_size=font_size
+                    # 注意：ここではoutput_pathを指定しないことで、システムが自動的に生成する
                 )
+                
+                # 動的字幕ファイルが正常に生成された場合
+                if subtitle_ass_path and Path(subtitle_ass_path).exists():
+                    # 動的字幕処理フラグを設定
+                    use_ass_subtitle = True
+                    print(f"[動的字幕] 動的字幕ファイルが正常に生成されました: {subtitle_ass_path}")
+                else:
+                    print(f"[動的字幕] 動的字幕ファイルの生成に失敗し、PNG字幕にフォールバック")
+                    # PNG字幕生成にフォールバック
+                    subtitle_img = create_subtitle_image(
+                        text=subtitle_text,
+                        style=style,
+                        width=subtitle_width,
+                        height=subtitle_height,
+                        font_size=font_size,
+                        output_path=str(subtitle_img_path)
+                    )
             else:
-                # 使用静态字幕生成
-                print(f"[字幕] 使用静态字幕生成")
-                print(f"[字幕] 字幕文本: {subtitle_text}")
-                print(f"[字幕] 字体大小: {font_size}")
-                print(f"[字幕] 样式: {style}")
+                # 静的字幕生成
+                print(f"[字幕] 静的字幕生成")
+                print(f"[字幕] 字幕テキスト: {subtitle_text}")
+                print(f"[字幕] フォントサイズ: {font_size}")
+                print(f"[字幕] スタイル: {style}")
                 
                 subtitle_img = create_subtitle_image(
                     text=subtitle_text,
@@ -886,42 +906,42 @@ class VideoSubtitleProcessor:
                     output_path=str(subtitle_img_path)
                 )
             
-            # 创建圆角矩形透明背景，使用自定义尺寸
+            # 透明な背景を角丸四角形として作成し、カスタムサイズを使用する
             bg_img_path = temp_dir / "background.png"
-            bg_radius = 20   # 圆角半径
+            bg_radius = 20   # 角丸半径
             
-            # 使用视频帧取色创建背景
-            print("【背景颜色】开始创建圆角矩形背景，使用视频帧取色")
+            # ビデオフレームからの色抽出を使用して背景を作成する
+            print("【背景色】開始し、ビデオフレームからの色抽出を使用して角丸四角形背景を作成する")
             bg_img = create_rounded_rect_background(
                 width=bg_width,
                 height=bg_height,
                 radius=bg_radius,
                 output_path=str(bg_img_path),
-                sample_frame=None  # 简化处理，不使用视频帧取色
+                sample_frame=None  # 簡素な処理のために、ビデオフレームからの色抽出を使用しない
             )
             
             if not bg_img:
-                print("创建圆角矩形背景失败")
+                print("角丸四角形背景の作成に失敗しました")
         elif enable_subtitle:
-            print("字幕功能已启用但没有有效的字幕数据，跳过字幕生成")
+            print("字幕機能が有効になっていますが、有効な字幕データが存在しないので、字幕生成をスキップします")
         else:
-            print("字幕功能已禁用，跳过字幕生成")
+            print("字幕機能が無効になっています、字幕生成をスキップします")
         
-        return subtitle_img, bg_img
+        return subtitle_img, bg_img, subtitle_ass_path, use_ass_subtitle  # ユーザーにASS字幕に関する情報を返す
     
     def _process_music(self, enable_music, music_path, music_mode, video_index, duration, temp_dir, progress_callback):
-        """处理音乐"""
+        """処理背景音楽"""
         if progress_callback:
-            progress_callback("处理背景音乐", 40.0)
+            progress_callback("処理背景音楽", 40.0)
             
         selected_music_path = None
         
         if enable_music:
-            print(f"【音乐处理】开始处理音乐，视频索引: {video_index}")
-            print(f"【音乐处理】音乐参数: enable_music={enable_music}, music_path={music_path}, music_mode={music_mode}")
-            # 如果启用了音乐但没有指定音乐路径，则尝试使用默认音乐目录
+            print(f"【音楽処理】開始し、ビデオインデックス: {video_index}")
+            print(f"【音楽処理】音楽パラメーター: enable_music={enable_music}, music_path={music_path}, music_mode={music_mode}")
+            # 音楽が有効になっていますが、音楽ファイルパスが指定されていない場合は、デフォルトの音楽ディレクトリを試してみる
             if not music_path:
-                # 尝试使用默认音乐目录
+                # デフォルトの音楽ディレクトリを試してみる
                 default_music_dir = get_data_path("music")
                 if Path(default_music_dir).exists():
                     music_extensions = ['.mp3', '.wav', '.m4a', '.aac', '.flac']
@@ -931,55 +951,55 @@ class VideoSubtitleProcessor:
                         music_files.extend(list(Path(default_music_dir).glob(f"*{ext.upper()}")))
                     
                     if music_files:
-                        # 默认使用第一个音乐文件
+                        # デフォルトで最初の音楽ファイルを使用する
                         selected_music_path = str(music_files[0])
-                        print(f"【音乐处理】使用默认音乐目录中的音乐: {selected_music_path}")
+                        print(f"【音楽処理】デフォルトの音楽ディレクトリ内の音楽を使用する: {selected_music_path}")
                     else:
-                        print(f"【音乐处理】默认音乐目录中没有找到音乐文件: {default_music_dir}")
+                        print(f"【音楽処理】デフォルトの音楽ディレクトリに音楽ファイルが見つかりません: {default_music_dir}")
                         selected_music_path = None
                 else:
-                    print(f"【音乐处理】默认音乐目录不存在: {default_music_dir}")
+                    print(f"【音楽処理】デフォルトの音楽ディレクトリが存在しません: {default_music_dir}")
                     selected_music_path = None
             else:
-                # 根据不同模式选择音乐文件
+                # モードに基づいて音楽ファイルを選択する
                 if Path(music_path).is_file():
-                    # 单个音乐文件
+                    # 単独の音楽ファイル
                     selected_music_path = music_path
-                    print(f"【音乐处理】使用单个音乐文件: {selected_music_path}")
+                    print(f"【音楽処理】単独の音楽ファイルを使用する: {selected_music_path}")
                 elif Path(music_path).is_dir():
-                    # 音乐文件夹
+                    # 音楽ファイルのフォルダ
                     music_extensions = ['.mp3', '.wav', '.m4a', '.aac', '.flac']
                     music_files = []
                     for ext in music_extensions:
                         music_files.extend(list(Path(music_path).glob(f"*{ext}")))
                         music_files.extend(list(Path(music_path).glob(f"*{ext.upper()}")))
                     
-                    print(f"【音乐处理】在音乐文件夹中找到 {len(music_files)} 个音乐文件")
+                    print(f"【音楽処理】音楽フォルダで {len(music_files)} つの音楽ファイルを見つけました")
                     for i, file in enumerate(music_files):
                         print(f"  [{i}] {file.name}")
                     
                     if music_files:
-                        print(f"【音乐处理】音乐模式: {music_mode}")
+                        print(f"【音楽処理】音楽モード: {music_mode}")
                         if music_mode == "random":
                             selected_music_path = str(random.choice(music_files))
-                            print(f"【音乐处理】随机选择音乐: {selected_music_path}")
+                            print(f"【音楽処理】ランダムに音楽を選択する: {selected_music_path}")
                         elif music_mode == "sequence":
-                            # 顺序模式：直接根据视频索引选择音乐文件
-                            # 确保索引不会超出范围
+                            # 順序モード：ビデオインデックスを使用して音楽ファイルを選択する
+                            # インデックスが範囲外に出ないようにする
                             music_file_index = video_index % len(music_files)
                             selected_music_path = str(music_files[music_file_index])
-                            print(f"【音乐处理】按顺序选择音乐: {selected_music_path} (音乐索引: {music_file_index}/{len(music_files)-1}, 视频索引: {video_index})")
-                        else:  # single模式，选择第一个
+                            print(f"【音楽処理】順序に音楽を選択する: {selected_music_path} (音楽インデックス: {music_file_index}/{len(music_files)-1}, ビデオインデックス: {video_index})")
+                        else:  # 単独モード、最初のものを選択する
                             selected_music_path = str(music_files[0])
-                            print(f"【音乐处理】选择第一个音乐: {selected_music_path}")
+                            print(f"【音楽処理】最初の音楽を選択する: {selected_music_path}")
                     else:
-                        print(f"【音乐处理】音乐文件夹中没有找到音乐文件: {music_path}")
+                        print(f"【音楽処理】音楽フォルダに音楽ファイルが見つかりません: {music_path}")
                         selected_music_path = None
                 else:
-                    print(f"【音乐处理】音乐路径不是有效的文件或文件夹: {music_path}")
+                    print(f"【音楽処理】音楽パスが有効なファイルやフォルダではありません: {music_path}")
                     selected_music_path = None
         else:
-            print(f"【音乐处理】音乐功能未启用")
+            print(f"【音楽処理】音楽機能が有効になっていません")
 
         print(f"【音乐处理】最终选择的音乐路径: {selected_music_path}")
         if selected_music_path and Path(selected_music_path).exists():
@@ -1016,7 +1036,8 @@ class VideoSubtitleProcessor:
                             bg_width, bg_height, subtitle_x, subtitle_y,
                             gif_x, gif_y,
                             music_volume, quality_settings, quicktime_compatible,
-                            progress_callback, has_music_file):
+                            progress_callback, has_music_file, 
+                            subtitle_ass_path=None, use_ass_subtitle=False):
         """使用FFmpeg处理视频"""
         # 显式初始化变量以避免静态分析工具报告未定义错误
         gif_x = gif_x if gif_x is not None else 800
@@ -1186,9 +1207,8 @@ class VideoSubtitleProcessor:
             
         # 叠加字幕（如果启用）
         if enable_subtitle:
-            # 初始化ASS字幕相关变量
-            use_ass_subtitle = False
-            subtitle_ass_path = None
+            # 使用传入的ASS字幕相关变量
+            # use_ass_subtitle 和 subtitle_ass_path 已作为参数传入
             
             if use_ass_subtitle and subtitle_ass_path:
                 # 使用ASS字幕文件
