@@ -16,10 +16,11 @@ import random
 from utils import get_video_info, get_audio_duration, run_ffmpeg_command, get_data_path, ensure_dir
 
 # 导入各功能模块
-from video_background import create_rounded_rect_background, process_image_for_overlay, create_subtitle_image
+from video_background import create_rounded_rect_background, process_image_for_overlay
 from video_audio import trim_music_to_video_duration, add_tts_audio_to_video, generate_subtitle_tts
 from video_preprocessing import preprocess_video_by_type
 from video_subtitle_processor import VideoSubtitleProcessor
+from static_subtitle import create_static_subtitle as create_subtitle_image
 
 # 导入日志管理器
 from log_manager import init_logging, log_with_capture
@@ -43,7 +44,11 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
                  video_index=0, enable_tts=False, tts_voice="zh-CN-XiaoxiaoNeural", 
                  tts_volume=100, tts_text="", auto_match_duration=False,
                  enable_dynamic_subtitle=False, animation_style="高亮放大", animation_intensity=1.5, highlight_color="#FFD700",
-                 match_mode="随机样式", position_x=540, position_y=960):
+                 match_mode="随机样式", position_x=540, position_y=960,
+                 # 新增的动态字幕参数
+                 dynamic_font_size=70, dynamic_font_color="#FFFFFF", dynamic_outline_size=2, 
+                 dynamic_outline_color="#000000", dynamic_subtitle_x=0, dynamic_subtitle_y=1200,
+                 animation_duration=0.3, opacity=100):
     """
     处理视频的主函数（精处理阶段）
     
@@ -67,6 +72,21 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
         tts_volume: TTS音量（百分比）
         tts_text: TTS文本
         auto_match_duration: 是否自动匹配视频时长（根据视频时长和配音时长计算变速系数）
+        enable_dynamic_subtitle: 是否启用动态字幕
+        animation_style: 动画样式
+        animation_intensity: 动画强度
+        highlight_color: 高亮颜色
+        match_mode: 匹配模式
+        position_x: 字幕位置X坐标
+        position_y: 字幕位置Y坐标
+        dynamic_font_size: 动态字幕字体大小
+        dynamic_font_color: 动态字幕字体颜色
+        dynamic_outline_size: 动态字幕描边大小
+        dynamic_outline_color: 动态字幕描边颜色
+        dynamic_subtitle_x: 动态字幕X坐标
+        dynamic_subtitle_y: 动态字幕Y坐标
+        animation_duration: 动画持续时间
+        opacity: 透明度
         
     返回:
         处理后的视频路径，失败返回None
@@ -239,7 +259,14 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
             highlight_color=highlight_color,
             match_mode=match_mode,
             position_x=position_x,
-            position_y=position_y
+            position_y=position_y,
+            # 新增的动态字幕参数
+            dynamic_font_size=dynamic_font_size,
+            dynamic_font_color=dynamic_font_color,
+            dynamic_outline_size=dynamic_outline_size,
+            dynamic_outline_color=dynamic_outline_color,
+            animation_duration=animation_duration,
+            opacity=opacity
         )
         
         if not final_path:

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-动态字幕系统模块
-支持多语言文本提取、TTS同步、动画效果
+动态字幕模块
+专门处理ASS格式动画字幕的生成和管理
 """
 
 import os
@@ -862,17 +862,138 @@ class DynamicSubtitleProcessor:
         )
 
 
-# 使用示例
-if __name__ == "__main__":
-    subtitle_system = DynamicSubtitleSystem()
+class AnimatedSubtitleProcessor:
+    """动态字幕处理器"""
     
-    # 测试文本提取
-    text = subtitle_system.extract_text_from_document(
-        "data/subtitle_data.xlsx", 
-        "chinese"
+    def __init__(self):
+        """初始化动态字幕处理器"""
+        self.system = DynamicSubtitleSystem()
+    
+    def get_animated_subtitle_text(self, subtitle_df, language, video_index=0):
+        """
+        从配置数据中获取动态字幕文本
+        
+        参数:
+            subtitle_df: 字幕配置DataFrame
+            language: 语言选择 (chinese, malay, thai)
+            video_index: 视频索引（从0开始）
+            
+        返回:
+            对应视频的动态字幕文本
+        """
+        if subtitle_df is None or subtitle_df.empty:
+            print("字幕配置为空")
+            return ""
+        
+        # 定义语言到列名的映射（动态字幕使用特定的列）
+        lang_to_column = {
+            "chinese": "cn_prompt",
+            "malay": "malay_prompt", 
+            "thai": "thai_prompt"
+        }
+        
+        # 获取对应的列名
+        column_name = lang_to_column.get(language, "cn_prompt")
+        print(f"获取动态字幕文本: 语言={language}, 列名={column_name}, 视频索引={video_index}")
+        
+        # 检查列是否存在
+        if column_name not in subtitle_df.columns:
+            print(f"列 '{column_name}' 不存在于字幕配置中")
+            print(f"可用列名: {list(subtitle_df.columns)}")
+            return ""
+        
+        # 获取有效的文本数据
+        valid_texts = subtitle_df[subtitle_df[column_name].notna() & (subtitle_df[column_name] != "")]
+        
+        if valid_texts.empty:
+            print(f"列 '{column_name}' 中没有有效数据")
+            return ""
+        
+        # 如果视频索引超出范围，使用最后一个可用的文本
+        if video_index >= len(valid_texts):
+            video_index = len(valid_texts) - 1
+            print(f"视频索引超出范围，使用最后一个文本: 索引={video_index}")
+        
+        # 获取对应索引的文本
+        subtitle_text = str(valid_texts.iloc[video_index][column_name])
+        print(f"获取到动态字幕文本: {subtitle_text}")
+        
+        return subtitle_text
+    
+    def create_animated_subtitle(self, text, width=1080, height=1920, output_path=None,
+                                animation_style="高亮放大", animation_intensity=1.5, 
+                                highlight_color="#FFD700", match_mode="指定样式",
+                                font_size=70, font_color="#FFFFFF", outline_size=2, 
+                                outline_color="#000000", position_x=0, position_y=1200,
+                                animation_duration=0.3, opacity=100):
+        """
+        创建动态字幕
+        
+        参数:
+            text: 字幕文本
+            width: 视频宽度
+            height: 视频高度
+            output_path: 输出路径
+            animation_style: 动画样式
+            animation_intensity: 动画强度
+            highlight_color: 高亮颜色
+            match_mode: 匹配模式
+            font_size: 字体大小
+            font_color: 字体颜色
+            outline_size: 描边大小
+            outline_color: 描边颜色
+            position_x: 字幕X坐标
+            position_y: 字幕Y坐标
+            animation_duration: 动画持续时间
+            opacity: 透明度
+            
+        返回:
+            字幕文件路径
+        """
+        # 创建动态字幕处理器
+        processor = DynamicSubtitleProcessor(
+            animation_style=animation_style,
+            animation_intensity=animation_intensity,
+            highlight_color=highlight_color,
+            match_mode=match_mode,
+            position_x=position_x,
+            position_y=position_y,
+            font_size=font_size,
+            font_color=font_color,
+            outline_size=outline_size,
+            outline_color=outline_color,
+            animation_duration=animation_duration,
+            opacity=opacity
+        )
+        
+        # 生成动态字幕
+        return processor.create_dynamic_subtitle(
+            text=text,
+            width=width,
+            height=height,
+            font_size=font_size,
+            output_path=output_path
+        )
+
+
+# 兼容旧接口的函数
+def get_animated_subtitle_text(subtitle_df, language, video_index=0):
+    """兼容旧接口的动态字幕文本获取函数"""
+    processor = AnimatedSubtitleProcessor()
+    return processor.get_animated_subtitle_text(subtitle_df, language, video_index)
+
+
+def create_animated_subtitle(text, width=1080, height=1920, output_path=None,
+                            animation_style="高亮放大", animation_intensity=1.5, 
+                            highlight_color="#FFD700", match_mode="指定样式",
+                            font_size=70, font_color="#FFFFFF", outline_size=2, 
+                            outline_color="#000000", position_x=0, position_y=1200,
+                            animation_duration=0.3, opacity=100):
+    """兼容旧接口的动态字幕创建函数"""
+    processor = AnimatedSubtitleProcessor()
+    return processor.create_animated_subtitle(
+        text, width, height, output_path,
+        animation_style, animation_intensity, highlight_color, match_mode,
+        font_size, font_color, outline_size, outline_color, position_x, position_y,
+        animation_duration, opacity
     )
-    print(f"提取的文本: {text}")
-    
-    # 测试时间分析
-    timings = subtitle_system.analyze_text_timing(text, 10.0, "chinese")
-    print(f"时间分析结果: {timings[:3]}...")  # 显示前3个

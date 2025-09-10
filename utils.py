@@ -92,9 +92,20 @@ def load_subtitle_config():
                 print(f"读取旧配置文件失败: {e}")
         
         # 如果旧配置文件也不存在，创建一个空的
-        df = pd.DataFrame(columns=pd.Index(["name", "style", "malay_title", "title_thai", "zn", "malay_prompt", "thai_prompt", "cn_prompt"]))
+        # 创建一个新的示例配置文件，明确区分静态字幕和动态字幕列
+        sample_data = {
+            "name": ["video1", "video2", "video3"],
+            "style": ["style1", "style2", "style3"],
+            "zn": ["特价促销\n现在下单立即享受优惠", "限时优惠\n错过不再有", "品质保证\n售后无忧"],
+            "malay_title": ["Grab cepat\nStok laris seperti roti canai", "Promosi masa terhad\nJangan lepaskan peluang ini", "Jaminan kualiti\nPerkhidmatan selepas jualan"],
+            "title_thai": ["ราคาพิเศษ\nซื้อเลยอย่ารอช้า", "โปรโมชั่นพิเศษ\nของแถมมากมาย", "รับประกันคุณภาพ\nบริการหลังการขาย"],
+            "cn_prompt": ["特价促销\n现在下单立即เข้าร่วม", "限时优惠\n错过不再有", "品质保证\n售后无忧"],
+            "malay_prompt": ["Grab cepat\nStok laris seperti roti canai", "Promosi masa terhad\nJangan lepaskan peluang ini", "Jaminan kualiti\nPerkhidmatan selepas jualan"],
+            "thai_prompt": ["ราคาพิเศษ\nซื้อเลยอย่ารอช้า", "โปรโมชั่นพิเศษ\nของแถมมากมาย", "รับประกันคุณภาพ\nบริการหลังการขาย"]
+        }
+        df = pd.DataFrame(sample_data)
         df.to_csv(config_path, index=False, encoding="utf-8")
-        print(f"创建了新的配置文件: {config_path}")
+        print(f"创建了新的示例配置文件: {config_path}")
         return df
     
     try:
@@ -102,15 +113,22 @@ def load_subtitle_config():
         df = pd.read_csv(config_path, encoding="utf-8")
         print(f"成功加载配置: {config_path}")
         
-        # 确保必要的列存在
-        required_columns = ["name", "title", "style"]
+        # 确保所有必要的列都存在
+        required_columns = ["name", "style", "zn", "malay_title", "title_thai", "cn_prompt", "malay_prompt", "thai_prompt"]
         for col in required_columns:
             if col not in df.columns:
-                df[col] = ""
+                if col in ["zn", "malay_title", "title_thai"]:
+                    # 静态字幕列
+                    df[col] = ""
+                elif col in ["cn_prompt", "malay_prompt", "thai_prompt"]:
+                    # 动态字幕列
+                    df[col] = ""
+                else:
+                    df[col] = ""
         
-        # 确保title_thai列存在
-        if "title_thai" not in df.columns:
-            df["title_thai"] = ""
+        # 确保向后兼容性，如果缺少title列则添加
+        if "title" not in df.columns:
+            df["title"] = df["zn"]  # 默认使用中文静态字幕作为title
                 
         return df
     except UnicodeDecodeError:

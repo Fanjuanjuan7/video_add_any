@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-视频处理GUI界面
-集成单个视频处理和批量处理功能
+视频处理GUI应用程序
+提供图形界面用于配置和执行视频处理任务
 """
 
 import os
 import sys
+from pathlib import Path
+from functools import partial
+import traceback
+
 import json
 import subprocess  # 添加subprocess导入
 import shutil  # 添加shutil导入
@@ -14,9 +18,6 @@ from pathlib import Path
 import random
 import configparser
 import pandas as pd
-
-import sys
-import os
 # 将当前目录添加到Python路径中，确保可以正确导入模块
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -49,8 +50,6 @@ try:
 except ImportError as e:
     print(f"错误: {e}")
     print("请确保video.py和utils.py在当前目录或Python路径中")
-    sys.exit(1)
-
     sys.exit(1)
 
 
@@ -471,7 +470,22 @@ class ProcessingThread(QThread):
                             tts_voice=self.tts_voice,
                             tts_volume=self.tts_volume,
                             tts_text=current_tts_text,
-                            auto_match_duration=self.auto_match_duration  # 添加自动匹配时长参数
+                            auto_match_duration=self.auto_match_duration,  # 添加自动匹配时长参数
+                            # 添加动态字幕参数
+                            enable_dynamic_subtitle=self.enable_dynamic_subtitle,
+                            animation_style=self.animation_style,
+                            animation_intensity=self.animation_intensity,
+                            highlight_color=self.highlight_color,
+                            match_mode=self.match_mode,
+                            position_x=self.dynamic_subtitle_x,
+                            position_y=self.dynamic_subtitle_y,
+                            # 新增的动态字幕参数
+                            dynamic_font_size=self.dynamic_font_size,
+                            dynamic_font_color=self.dynamic_font_color,
+                            dynamic_outline_size=self.dynamic_outline_size,
+                            dynamic_outline_color=self.dynamic_outline_color,
+                            animation_duration=self.animation_duration,
+                            opacity=self.opacity
                         )
                         
                         item_end_time = time.time()
@@ -3203,12 +3217,12 @@ class VideoProcessorApp(QMainWindow):
             self.save_current_settings()
             if event is not None:
                 event.accept()
-import sys
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import Qt
 
 
 if __name__ == "__main__":
+    from PyQt5.QtWidgets import QApplication
+    from PyQt5.QtCore import Qt
+    
     # 启用高DPI缩放
     try:
         QApplication.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling, True)
