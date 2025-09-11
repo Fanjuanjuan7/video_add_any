@@ -992,8 +992,20 @@ def create_animated_subtitle(text, width=1080, height=1920, output_path=None,
     """兼容旧接口的动态字幕创建函数"""
     processor = AnimatedSubtitleProcessor()
     return processor.create_animated_subtitle(
-        text, width, height, output_path,
-        animation_style, animation_intensity, highlight_color, match_mode,
-        font_size, font_color, outline_size, outline_color, position_x, position_y,
-        animation_duration, opacity
+        text=text, 
+        width=width, 
+        height=height, 
+        output_path=output_path,
+        animation_style=animation_style, 
+        animation_intensity=animation_intensity, 
+        highlight_color=highlight_color, 
+        match_mode=match_mode,
+        font_size=font_size, 
+        font_color=font_color, 
+        outline_size=outline_size, 
+        outline_color=outline_color, 
+        position_x=position_x, 
+        position_y=position_y,
+        animation_duration=animation_duration, 
+        opacity=opacity
     )

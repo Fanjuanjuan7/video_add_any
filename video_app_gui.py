@@ -41,7 +41,7 @@ except ImportError as e:
 # 确认必要的库导入
 try:
     # 导入处理函数 - 使用新的video.py模块
-    from video import process_video, batch_process_videos
+    from video import process_video
     from utils import load_style_config, get_data_path, find_matching_image
     from video_helpers import get_tts_text_for_video
     # 导入日志管理器
@@ -160,6 +160,10 @@ class ProcessingThread(QThread):
         # 使用新的模块结构而不是旧的video_core.py
         from video import process_video
         from video_preprocessing import process_folder_videos, preprocess_video_by_type, preprocess_video_without_reverse
+        from utils import get_video_info
+        from log_manager import get_log_manager
+        import logging
+        import shutil
         
         start_time = time.time()
         
@@ -170,7 +174,6 @@ class ProcessingThread(QThread):
         preprocessed_videos = []  # 在方法开始处初始化，确保在所有代码路径中都定义
         total_duration = 0  # 初始化变量
         avg_duration = 0    # 初始化变量
-        e = None            # 初始化变量
         stats = {}          # 初始化变量
         
         try:
@@ -209,7 +212,6 @@ class ProcessingThread(QThread):
                     if merged_video_path and Path(merged_video_path).exists():
                         print(f"文件夹视频预处理完成: {merged_video_path}")
                         # 获取预处理后视频的信息
-                        from utils import get_video_info
                         merged_info = get_video_info(merged_video_path)
                         if merged_info:
                             width, height, duration = merged_info
@@ -239,7 +241,6 @@ class ProcessingThread(QThread):
                     self.progress_updated.emit(int((current_index / total_files) * 100), f"预处理短视频 {i+1}/{len(self.short_videos)}: {Path(video_path).name}")
                     
                     # 对短视频进行预处理（水印处理+正放倒放）
-                    import tempfile
                     temp_dir = Path(tempfile.mkdtemp())
                     preprocessed_path = None
                     try:
@@ -248,7 +249,6 @@ class ProcessingThread(QThread):
                         if preprocessed_path and Path(preprocessed_path).exists():
                             print(f"短视频预处理完成: {preprocessed_path}")
                             # 获取预处理后视频的信息
-                            from utils import get_video_info
                             preprocessed_info = get_video_info(preprocessed_path)
                             if preprocessed_info:
                                 width, height, duration = preprocessed_info
@@ -293,7 +293,6 @@ class ProcessingThread(QThread):
                     self.progress_updated.emit(int((current_index / total_files) * 100), f"预处理长视频 {i+1}/{len(self.long_videos)}: {Path(video_path).name}")
                     
                     # 对长视频进行预处理（仅水印处理，不进行正放倒放）
-                    import tempfile
                     temp_dir = Path(tempfile.mkdtemp())
                     preprocessed_path = None
                     try:
@@ -302,7 +301,6 @@ class ProcessingThread(QThread):
                         if preprocessed_path and Path(preprocessed_path).exists():
                             print(f"长视频预处理完成: {preprocessed_path}")
                             # 获取预处理后视频的信息
-                            from utils import get_video_info
                             preprocessed_info = get_video_info(preprocessed_path)
                             if preprocessed_info:
                                 width, height, duration = preprocessed_info
@@ -428,41 +426,43 @@ class ProcessingThread(QThread):
                         sorted_index = preprocessed_to_sorted_map.get(i, i)
                         print(f"调用process_video进行精处理，预处理索引: {i}, 排序索引: {sorted_index}")
                         print(f"音乐参数: enable_music={self.enable_music}, music_path={music_path_value}, music_mode={music_mode_value}, music_volume={self.music_volume}")
+                        
+                        # 修复参数传递问题，确保所有参数都正确传递
                         result = process_video(
-                            preprocessed_path, 
-                            str(output_path),
-                            self.style, 
-                            self.subtitle_lang, 
-                            self.quicktime_compatible,
-                            self.img_position_x, 
-                            self.img_position_y,
-                            self.font_size,
-                            self.subtitle_x,
-                            self.subtitle_y,
-                            self.bg_width,
-                            self.bg_height,
-                            self.img_size,
-                            self.subtitle_text_x,
-                            self.subtitle_text_y,
-                            self.random_position,
-                            self.enable_subtitle,
-                            self.enable_background,
-                            self.enable_image,
-                            self.enable_music,
-                            music_path_value,
-                            music_mode_value,
-                            self.music_volume,
-                            self.user_document_path,
-                            self.enable_gif,
-                            self.gif_path,
-                            self.gif_loop_count,
-                            self.gif_scale,
-                            self.gif_rotation,
-                            self.gif_x,
-                            self.gif_y,
-                            self.scale_factor,
-                            self.image_path,
-                            self.subtitle_width,
+                            video_path=preprocessed_path, 
+                            output_path=str(output_path),
+                            style=self.style, 
+                            subtitle_lang=self.subtitle_lang, 
+                            quicktime_compatible=self.quicktime_compatible,
+                            img_position_x=self.img_position_x, 
+                            img_position_y=self.img_position_y,
+                            font_size=self.font_size,
+                            subtitle_x=self.subtitle_x,
+                            subtitle_y=self.subtitle_y,
+                            bg_width=self.bg_width,
+                            bg_height=self.bg_height,
+                            img_size=self.img_size,
+                            subtitle_text_x=self.subtitle_text_x,
+                            subtitle_text_y=self.subtitle_text_y,
+                            random_position=self.random_position,
+                            enable_subtitle=self.enable_subtitle,
+                            enable_background=self.enable_background,
+                            enable_image=self.enable_image,
+                            enable_music=self.enable_music,
+                            music_path=music_path_value,
+                            music_mode=music_mode_value,
+                            music_volume=self.music_volume,
+                            document_path=self.user_document_path,
+                            enable_gif=self.enable_gif,
+                            gif_path=self.gif_path,
+                            gif_loop_count=self.gif_loop_count,
+                            gif_scale=self.gif_scale,
+                            gif_rotation=self.gif_rotation,
+                            gif_x=self.gif_x,
+                            gif_y=self.gif_y,
+                            scale_factor=self.scale_factor,
+                            image_path=self.image_path,
+                            subtitle_width=self.subtitle_width,
                             quality_settings=self.quality_settings,
                             progress_callback=update_progress_callback,
                             video_index=sorted_index,  # 传递排序后的索引，确保文档数据按正确顺序匹配
@@ -565,9 +565,8 @@ class ProcessingThread(QThread):
             # 记录完成日志
             logging.info(f"🏁 批量处理完成！成功: {success_count}/{total_files} 个，耗时: {total_duration:.1f}秒")
 
-        except Exception as exc:
+        except Exception as e:
             # 处理异常情况
-            e = exc  # 保存异常到变量
             logging.error(f"处理过程中发生异常: {str(e)}")
             import traceback
             traceback.print_exc()
@@ -2267,6 +2266,7 @@ class VideoProcessorApp(QMainWindow):
         gif_path = self.gif_path.text().strip()
         gif_loop_count = self.gif_loop_count.value()
         gif_scale = self.gif_scale.value()
+        gif_rotation = self.gif_rotation.value()
         gif_x = self.gif_x.value()
         gif_y = self.gif_y.value()
         
@@ -2300,6 +2300,9 @@ class VideoProcessorApp(QMainWindow):
         tts_voice = "zh-CN-XiaoxiaoNeural"
         tts_volume = 100
         tts_text = ""
+        
+        # 获取自动匹配时长参数
+        auto_match_duration = self.auto_match_duration.isChecked()
         
         # 检查是否启用了智能语音
         if self.enable_voice.isChecked():
@@ -2346,9 +2349,9 @@ class VideoProcessorApp(QMainWindow):
             self.subtitle_text_x.value(), self.subtitle_text_y.value(),
             random_position, enable_subtitle, enable_background, enable_image,
             enable_music, music_path, music_mode, music_volume,
-            document_path, enable_gif, gif_path, gif_loop_count, gif_scale, self.gif_rotation.value(), self.gif_x.value(), self.gif_y.value(), scale_factor, image_path,
+            document_path, enable_gif, gif_path, gif_loop_count, gif_scale, gif_rotation, gif_x, gif_y, scale_factor, image_path,
             quality_settings,  # 添加质量设置参数
-            enable_tts, tts_voice, tts_volume, tts_text, self.auto_match_duration.isChecked(),  # 添加TTS参数和自动匹配时长参数
+            enable_tts, tts_voice, tts_volume, tts_text, auto_match_duration,  # 添加TTS参数和自动匹配时长参数
             enable_dynamic_subtitle, animation_style, animation_intensity, highlight_color, match_mode,  # 添加动态字幕参数
             # 添加新的动态字幕参数
             dynamic_font_size, dynamic_font_color, dynamic_outline_size, 

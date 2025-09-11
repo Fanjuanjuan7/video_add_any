@@ -106,6 +106,12 @@ class VideoSubtitleProcessor:
             match_mode: 匹配模式
             position_x: 字幕位置X坐标
             position_y: 字幕位置Y坐标
+            dynamic_font_size: 动态字幕字体大小
+            dynamic_font_color: 动态字幕字体颜色
+            dynamic_outline_size: 动态字幕描边大小
+            dynamic_outline_color: 动态字幕描边颜色
+            animation_duration: 动画持续时间
+            opacity: 透明度
             
         返回:
             处理后的视频路径
@@ -371,41 +377,41 @@ class VideoSubtitleProcessor:
                     print("无法解析用户选择的文档文件")
                     
             except Exception as e:
-                print(f"加载用户文档失败: {e}")
+                print(f"โหลด用户เอกสาร失败: {e}")
                 subtitle_df = None
         
         # 如果没有加载到用户文档，尝试加载默认的字幕配置
         if enable_subtitle and subtitle_df is None:
             try:
-                # 加载默认的字幕配置文件
+                # 加载默认的字幕配置ไฟล์
                 subtitle_df = load_subtitle_config()
                 if subtitle_df is not None and not subtitle_df.empty:
-                    print(f"成功加载默认字幕配置: {len(subtitle_df)} 条记录")
-                    print(f"默认配置列名: {list(subtitle_df.columns)}")
+                    print(f"成功โหลด默认字บรรณ์การกำหนด: {len(subtitle_df)} รายการ")
+                    print(f"ชื่อคอลัมน์การกำหนดเริ่มต้น: {list(subtitle_df.columns)}")
                 else:
-                    print("默认字幕配置为空或不存在")
-                    # 创建一个简单的默认配置
+                    print("การกำหนดเริ่มต้นของคำบรรณ์หรือไม่มีอยู่")
+                    # สร้างการกำหนดเริ่มต้นที่ง่าย
                     default_data = {
                         'name': ['default'],
-                        'title': ['特价促销\n现在下单立即享受优惠'],
-                        'cn_prompt': ['特价促销\n现在下单立即เข้าร่วม'],
-                        'malay_prompt': ['Grab cepat\nStok laris seperti roti canai'],
-                        'thai_prompt': ['ราคาพิเศษ\nซื้อเลยอย่ารอช้า']
+                        'title': ['特价โปรโมชั่น\nสั่งซื้อตอนนี้ได้รับส่วนลด'],
+                        'cn_prompt': ['特价โปรโมชั่น\nสั่งซื้อตอนนี้ได้รับส่วนลด'],
+                        'malay_prompt': ['Promosi khasiat\nBeli sekarang dapat diskon'],
+                        'thai_prompt': ['โปรโมชั่นพิเศษ\nสั่งซื้อตอนนี้ได้รับส่วนลด']
                     }
                     subtitle_df = pd.DataFrame(default_data)
-                    print("使用默认字幕数据")
+                    print("ใช้ข้อมูลตัวอย่างสำหรับการทดสอบ")
             except Exception as e:
-                print(f"加载默认字幕配置失败: {e}")
-                # 创建一个简单的默认配置
+                print(f"โหลดการกำหนดเริ่มต้นของคำบรรณ์ไม่สำเร็จ: {e}")
+                # สร้างการกำหนดเริ่มต้นที่ง่าย
                 default_data = {
                     'name': ['default'],
-                    'title': ['特价促销\n现在下单立即享受优惠'],
-                    'cn_prompt': ['特价促销\n现在下单立即เข้าร่วม'],
-                    'malay_prompt': ['Grab cepat\nStok laris seperti roti canai'],
-                    'thai_prompt': ['ราคาพิเศษ\nซื้อเลยอย่ารอช้า']
+                    'title': ['特价โปรโมชั่น\nสั่งซื้อตอนนี้ได้รับส่วนลด'],
+                    'cn_prompt': ['特价โปรโมชั่น\nสั่งซื้อตอนนี้ได้รับส่วนลด'],
+                    'malay_prompt': ['Promosi khasiat\nBeli sekarang dapat diskon'],
+                    'thai_prompt': ['โปรโมชั่นพิเศษ\nสั่งซื้อตอนนี้ได้รับส่วนลด']
                 }
                 subtitle_df = pd.DataFrame(default_data)
-                print("使用默认字幕数据")
+                print("ใช้ข้อมูลตัวอย่างสำหรับการทดสอบ")
         
         return subtitle_df
     
@@ -420,8 +426,16 @@ class VideoSubtitleProcessor:
         if enable_dynamic_subtitle and enable_subtitle:
             print(f"[动态字幕] 启用动态字幕功能")
             print(f"[动态字幕] 动画样式: {animation_style}")
-            print(f"[动态字幕] 动画强度: {animation_intensity}")
-            print(f"[动态字幕] 高亮颜色: {highlight_color}")
+            print(f"[动态字幕] 动画ความเข้ม: {animation_intensity}")
+            print(f"[动态字幕] สีเน้น: {highlight_color}")
+            print(f"[动态字幕] โหมดการจับคู่: {match_mode}")
+            print(f"[动态字幕] พิกัดตำแหน่ง: ({position_x}, {position_y})")
+            print(f"[动态字幕] ขนาดตัวอักษร: {font_size}")
+            print(f"[动态字幕] สีตัวอักษร: {font_color}")
+            print(f"[动态字幕] ขนาดเส้นขอบ: {outline_size}")
+            print(f"[动态字ื่น] สีเส้นขอบ: {outline_color}")
+            print(f"[动态字ุม] ระยะเวลาแอนิเมชัน: {animation_duration}")
+            print(f"[动态字ุม] ความโปร่งใส: {opacity}")
             
             try:
                 dynamic_processor = DynamicSubtitleProcessor(
@@ -438,61 +452,59 @@ class VideoSubtitleProcessor:
                     animation_duration=animation_duration,
                     opacity=opacity
                 )
-                print(f"[动态字幕] 动态字幕处理器初始化成功")
+                print(f"[动态字ุม] สร้างตัวประมวลผลสำเร็จ")
             except ImportError as e:
-                print(f"[动态字幕] 导入动态字幕模块失败: {e}")
+                print(f"[动态字ุม] การนำเข้าโมดูลไม่สำเร็จ: {e}")
+            except Exception as e:
+                print(f"[动态字ุม] การสร้างตัวประมวลผลไม่สำเร็จ: {e}")
+                import traceback
+                traceback.print_exc()
         
         return dynamic_processor
-    
-    def _process_random_position(self, random_position, subtitle_x, subtitle_y, subtitle_text_x, 
-                               subtitle_text_y, subtitle_width, width, height, enable_subtitle=True):
+
+    def _process_random_position(self, random_position, subtitle_x, subtitle_y, subtitle_text_x, subtitle_text_y, subtitle_width, width, height, enable_subtitle):
         """处理随机位置逻辑"""
-        if random_position:
+        # 如果启用了随机位置且启用了字幕，则处理随机位置
+        if random_position and enable_subtitle:
+            import random
             # 定义随机区域边界（基于统一坐标系统1080x1920）
             # 用户指定的固定字幕区域：左上角(50,200)到右下角(1030,1720)
             # 注意：1080宽度，左右各留50边距，所以右边界是1030
             # 1920高度，上下边距分别为200和顶边距，底边距为200
             region_left = 50     # 区域左边界
-            region_top = 200     # 区域上边界  
-            region_right = 1030  # 区域右边界 (1080-50)
-            region_bottom = 1720 # 区域下边界 (1920-200)
+            region_top = 200     # 区역上边界  
+            region_right = 1030  # 区역ขวา (1080-50)
+            region_bottom = 1720 # 区역ล่าง (1920-200)
             
-            # 直接使用GUI中的字幕宽度参数，将字幕左上角作为位置参考点
-            # X坐标范围：从区域左边界到（区域右边界 - 字幕宽度）
+            # 直接ใช้GUIของคำบรรณ์ความกว้างดังกล่าวเป็นพารามิเตอร์สำหรับตำแหน่งเริ่มต้น
+            # ช่วง X: จากขอบเขตซ้ายไปจนถึง (ขอบเขตขวา - ความกว้างคำบรรณ์)
             min_x = region_left
             max_x = region_right - subtitle_width
-            # Y坐标范围：从区域上边界到（区域下边界 - 一个合理的高度估算，比如200像素）
+            # ช่วง Y: จากขอบเขตบนไปจนถึง (ขอบเขตล่าง - ความสูงคำบรรณ์ที่เราประเมินว่าเป็น 200 พิกเซล)
             min_y = region_top
-            max_y = region_bottom - 200  # 估算字幕高度为200像素
+            max_y = region_bottom - 200  # ประเมินความสูงคำบรรณ์ว่าเป็น 200 พิกเซล
             
-            # 确保范围有效
+            # ตรวจสอบช่วงว่ามีความถูกต้องหรือไม่
             min_x = max(min_x, 0)
-            max_x = max(max_x, min_x)  # 确保max_x不小于min_x
+            max_x = max(max_x, min_x)  # ตรวจสอบว่า max_x ไม่ต่ำกว่า min_x
             min_y = max(min_y, 0)
-            max_y = max(max_y, min_y)  # 确保max_y不小于min_y
+            max_y = max(max_y, min_y)  # ตรวจสอบว่า max_y ไม่ต่ำกว่า min_y
             
-            # 生成随机位置（字幕左上角坐标）
+            # สุ่มตำแหน่ง (พิกเซลบนซ้ายของคำบรรณ์)
             new_subtitle_text_x = random.randint(min_x, max_x)
             new_subtitle_text_y = random.randint(min_y, max_y)
             
-            print(f"🎲 随机字幕位置: 原始({subtitle_text_x}, {subtitle_text_y}) -> 随机({new_subtitle_text_x}, {new_subtitle_text_y})")
-            print(f"📎 随机范围: X[{min_x}, {max_x}], Y[{min_y}, {max_y}]")
-            print(f"📐 字幕区域: 左上角({region_left}, {region_top}) -> 右下角({region_right}, {region_bottom})")
-            print(f"📏 字幕尺寸: 宽={subtitle_width}, 高=200(估算)")
-            logging.info(f"🎲 随机字幕位置: 原始({subtitle_text_x}, {subtitle_text_y}) -> 随机({new_subtitle_text_x}, {new_subtitle_text_y})")
-            logging.info(f"📎 随机范围: X[{min_x}, {max_x}], Y[{min_y}, {max_y}]")
+            print(f"🎲 สุ่มตำแหน่งคำบรรณ์: เริ่มต้น({subtitle_text_x}, {subtitle_text_y}) -> สุ่ม({new_subtitle_text_x}, {new_subtitle_text_y})")
+            print(f"📎 สุ่มพิมพ์: X[{min_x}, {max_x}], Y[{min_y}, {max_y}]")
+            print(f"📐 พื้นที่คำบรรณ์: จุดบนซ้าย({region_left}, {region_top}) -> จุดล่างขวา({region_right}, {region_bottom})")
+            print(f"📏 ขนาดคำบรรณ์: ความกว้าง={subtitle_width}, ความสูง=200(ประเมิน)")
             
-            # 更新位置参数
+            # อัปเดตพารามิเตอร์ตำแหน่ง
             subtitle_text_x = new_subtitle_text_x
             subtitle_text_y = new_subtitle_text_y
-        elif enable_subtitle:
-            print(f"📍 使用固定字幕位置: ({subtitle_text_x}, {subtitle_text_y})")
-            logging.info(f"📍 使用固定字幕位置: ({subtitle_text_x}, {subtitle_text_y})")
-        else:
-            print(f"❌ 字幕功能已禁用，跳过字幕位置处理")
         
         return subtitle_text_x, subtitle_text_y
-    
+
     def _process_image(self, enable_image, original_video_path, video_path, image_path, img_size, temp_dir, progress_callback):
         """处理图片素材"""
         if progress_callback:
@@ -522,110 +534,110 @@ class VideoSubtitleProcessor:
                 video_name = Path(video_path).stem
                 print(f"📁 使用当前视频名查找图片: {video_name}")
                 final_image_path = find_matching_image(video_name, custom_image_path=image_path)
-                print(f"📁 find_matching_image返回结果: {final_image_path}")
+                print(f"📁 find_matching_image返回ผล: {final_image_path}")
             
             print(f"📁 最终图片路径: {final_image_path}")
             
             if final_image_path:
                 print(f"✅ 找到匹配的图片: {final_image_path}")
-                # 验证图片文件是否真实存在
+                # ตรวจสอบว่าไฟล์ภาพมีอยู่จริง
                 if Path(final_image_path).exists():
-                    print(f"✅ 图片文件确实存在: {final_image_path}")
+                    print(f"✅ ไฟล์ภาพมีอยู่จริง: {final_image_path}")
                 else:
-                    print(f"❌ 图片文件不存在: {final_image_path}")
+                    print(f"❌ ไฟล์ภาพไม่มีอยู่: {final_image_path}")
                     final_image_path = None
             else:
-                print("⚠️ 没有找到匹配的图片")
+                print("⚠️ ไม่พบภาพที่ตรงกัน")
         else:
-            print("❌ 图片功能已禁用，跳过图片查找")
+            print("❌ 图片功能ได้ถูกปิดใช้งาน ข้ามการค้นหาภาพ")
             
         if final_image_path and enable_image:
-            print(f"✅ 找到匹配的图片: {final_image_path}")
-            # 处理图片
-            print(f"【图片流程】开始处理图片 {final_image_path}，大小设置为 {img_size}x{img_size}")
+            print(f"✅ พบภาพที่ตรงกัน: {final_image_path}")
+            # ประมวลผลภาพ
+            print(f"【ภาพกระบวนการ】เริ่มประมวลผลภาพ {final_image_path} โดยตั้งขนาดเป็น {img_size}x{img_size}")
             processed_img_path = temp_dir / "processed_image.png"
-            print(f"【图片流程】临时处理图片路径: {processed_img_path}")
+            print(f"【ภาพกระบวนการ】เส้นทางประมวลผลภาพชั่วคราว: {processed_img_path}")
             
-            # 调用图片处理函数
-            print(f"【图片流程】调用process_image_for_overlay参数: input={final_image_path}, output={processed_img_path}, size=({img_size}, {img_size})")
+            # เรียกใช้ฟังก์ชันประมวลผลภาพ
+            print(f"【ภาพกระบวนการ】เรียกใช้พารามิเตอร์ process_image_for_overlay: input={final_image_path}, output={processed_img_path}, size=({img_size}, {img_size})")
             processed_img = process_image_for_overlay(
                 final_image_path,
                 str(processed_img_path),
                 size=(img_size, img_size)
             )
-            print(f"【图片流程】process_image_for_overlay返回结果: {processed_img}")
+            print(f"【ภาพกระบวนการ】process_image_for_overlay คืนค่า: {processed_img}")
             
             if not processed_img:
-                print("❌ 处理图片失败，跳过图片叠加")
+                print("❌ ประมวลผลภาพไม่สำเร็จ ข้ามการวางภาพ")
                 has_image = False
             else:
-                print(f"✅ 【图片流程】图片处理成功: {processed_img}")
-                # 验证处理后的图片文件是否存在
+                print(f"✅ 【ภาพกระบวนการ】ประมวลผลภาพสำเร็จ: {processed_img}")
+                # ตรวจสอบว่าไฟล์ภาพที่ประมวลผลแล้วมีอยู่จริง
                 if Path(processed_img).exists():
-                    print(f"✅ 处理后的图片文件确实存在: {processed_img}")
+                    print(f"✅ ไฟล์ภาพที่ประมวลผลแล้วมีอยู่จริง: {processed_img}")
                     file_size = Path(processed_img).stat().st_size
-                    print(f"✅ 处理后的图片文件大小: {file_size} 字节")
+                    print(f"✅ ขนาดไฟล์ภาพที่ประมวลผลแล้ว: {file_size} ไบต์")
                 else:
-                    print(f"❌ 处理后的图片文件不存在: {processed_img}")
+                    print(f"❌ ไฟล์ภาพที่ประมวลผลแล้วไม่มีอยู่: {processed_img}")
                 has_image = True
         elif enable_image and not final_image_path:
-            print("⚠️ 图片功能已启用但没有找到匹配的图片")
-            print("📁 尝试使用默认图片...")
+            print("⚠️ ภาพได้ถูกเปิดใช้งานแต่ไม่พบภาพที่ตรงกัน")
+            print("📁 ลองใช้ข้อมูลภาพเริ่มต้น...")
             
-            # 尝试从图片目录获取任意图片
+            # ลองดึงภาพจากไดเรกทอรีภาพ
             try:
-                print("📁 【默认图片流程】开始尝试获取默认图片...")
+                print("📁 【โปรเซสภาพเริ่มต้น】เริ่มลองดึงภาพเริ่มต้น...")
                 image_dir = get_data_path("input/images")
-                print(f"📁 【默认图片流程】图片目录路径: {image_dir}")
+                print(f"📁 【โปรเซสภาพเริ่มต้น】เส้นทางไดเรกทอรีภาพ: {image_dir}")
                 
                 if Path(image_dir).exists():
-                    print(f"📁 【默认图片流程】图片目录存在，开始搜索图片文件...")
+                    print(f"📁 【โปรเซสภาพเริ่มต้น】ไดเรกทอรีภาพมีอยู่ เริ่มค้นหาไฟล์ภาพ...")
                     image_files = []
                     for ext in ['.jpg', '.jpeg', '.png', '.webp']:
                         found_files = list(Path(image_dir).glob(f"*{ext}"))
                         found_files_upper = list(Path(image_dir).glob(f"*{ext.upper()}"))
-                        print(f"📁 【默认图片流程】扩展名 {ext}: 找到 {len(found_files)} 个文件")
-                        print(f"📁 【默认图片流程】扩展名 {ext.upper()}: 找到 {len(found_files_upper)} 个文件")
+                        print(f"📁 【โปรเซสภาพเริ่มต้น】พิวัฒนาการ {ext}: พบ {len(found_files)} ไฟล์")
+                        print(f"📁 【โปรเซสภาพเริ่มต้น】พิวัฒนาการ {ext.upper()}: พบ {len(found_files_upper)} ไฟล์")
                         image_files.extend(found_files)
                         image_files.extend(found_files_upper)
                     
-                    print(f"📁 【默认图片流程】总共找到 {len(image_files)} 个图片文件")
+                    print(f"📁 【โปรเซสภาพเริ่มต้น】พบภาพทั้งหมด {len(image_files)} ไฟล์")
                     
                     if image_files:
                         default_image = str(image_files[0])
-                        print(f"📁 【默认图片流程】使用默认图片: {default_image}")
+                        print(f"📁 【โปรเซสภาพเริ่มต้น】ใช้ภาพเริ่มต้น: {default_image}")
                         
                         processed_img_path = temp_dir / "processed_image.png"
-                        print(f"📁 【默认图片流程】处理图片到: {processed_img_path}")
+                        print(f"📁 【โปรเซสภาพเริ่มต้น】ประมวลผลภาพไปที่: {processed_img_path}")
                         
                         processed_img = process_image_for_overlay(
                             default_image,
                             str(processed_img_path),
                             size=(img_size, img_size)
                         )
-                        print(f"📁 【默认图片流程】process_image_for_overlay返回: {processed_img}")
+                        print(f"📁 【โปรเซสภาพเริ่มต้น】process_image_for_overlay คืนค่า: {processed_img}")
                         
                         if processed_img:
-                            print(f"✅ 【图片流程】默认图片处理成功: {processed_img}")
+                            print(f"✅ 【ภาพกระบวนการ】ภาพเริ่มต้นประมวลผลสำเร็จ: {processed_img}")
                             has_image = True
                             final_image_path = default_image
                         else:
-                            print("❌ 默认图片处理失败")
+                            print("❌ ประมวลผลภาพเริ่มต้นไม่สำเร็จ")
                             has_image = False
                     else:
-                        print("❌ 图片目录中没有可用图片")
+                        print("❌ ไม่มีภาพที่สามารถใช้ได้ในไดเรกทอรีภาพ")
                         has_image = False
                 else:
-                    print(f"❌ 图片目录不存在: {image_dir}")
+                    print(f"❌ ไม่มีไดเรกทอรีภาพ: {image_dir}")
                     has_image = False
             except Exception as e:
-                print(f"❌ 获取默认图片失败: {e}")
+                print(f"❌ ดึงภาพเริ่มต้นไม่สำเร็จ: {e}")
                 import traceback
                 traceback.print_exc()
                 has_image = False
         else:
             if not enable_image:
-                print("图片功能已禁用")
+                print("ภาพได้ถูกปิดใช้งาน")
             has_image = False
         
         return has_image, final_image_path, processed_img_path
@@ -639,57 +651,57 @@ class VideoSubtitleProcessor:
         processed_gif_path = None
         
         if enable_gif and gif_path and Path(gif_path).exists():
-            print(f"【GIF流程】处理GIF {gif_path}，缩放系数: {gif_scale}，位置: ({gif_x}, {gif_y})，循环次数: {gif_loop_count}")
+            print(f"【GIF流程】ประมวลผลGIF {gif_path} โดยมีปัจจัยการขยาย: {gif_scale} และตำแหน่ง: ({gif_x}, {gif_y}) และจำนวนรอบ: {gif_loop_count}")
             
-            # 检查文件格式
+            # ตรวจสอบรูปแบบไฟล์
             file_ext = Path(gif_path).suffix.lower()
             if file_ext in ['.gif', '.webp']:
-                # 使用改进的GIF处理函数，传递视频时长确保GIF持续整个视频时长
+                # ใช้ฟังก์ชันประมวลผลGIFที่ปรับปรุง ให้เวลาวิดีโอเพื่อให้GIFดำเนินการตลอดเวลาวิดีโอ
                 processed_gif_path = self._process_animated_gif_for_video(gif_path, temp_dir, gif_scale, gif_loop_count, duration, gif_rotation)
                 
                 if processed_gif_path:
                     has_gif = True
-                    print(f"【GIF流程】GIF处理成功: {processed_gif_path}")
+                    print(f"【GIF流程】GIFประมวลผลสำเร็จ: {processed_gif_path}")
                 else:
-                    print(f"【GIF流程】GIF处理失败")
+                    print(f"【GIF流程】GIFประมวลผลไม่สำเร็จ")
             else:
-                print(f"【GIF流程】不支持的文件格式: {file_ext}")
+                print(f"【GIF流程】ไม่รองรับรูปแบบไฟล์: {file_ext}")
         else:
             if not enable_gif:
-                print("GIF功能已禁用")
+                print("GIFได้ถูกปิดใช้งาน")
             elif not gif_path:
-                print("未指定GIF路径")
+                print("ไม่ได้ระบุเส้นทางGIF")
             else:
-                print(f"GIF文件不存在: {gif_path}")
+                print(f"GIFไฟล์ไม่มีอยู่: {gif_path}")
         
         return has_gif, processed_gif_path
     
     def _process_animated_gif_for_video(self, gif_path, temp_dir, scale_factor=1.0, loop_count=-1, video_duration=None, gif_rotation=0):
         """
-        为视频处理专门优化的动画GIF处理函数
+        ฟังก์ชันประมวลผลGIFที่ปรับปรุงสำหรับวิดีโอ
         
-        参数:
-            gif_path: 原始GIF文件路径
-            temp_dir: 临时目录路径
-            scale_factor: 缩放因子
-            loop_count: 循环次数 (-1表示无限循环)
-            video_duration: 视频时长（秒），用于确保GIF持续整个视频时长
-            gif_rotation: 旋转角度（度），0-359度
+        พารามิเตอร์:
+            gif_path: เส้นทางไฟล์GIFที่ใช้ร่วม
+            temp_dir: เส้นทางไดเรกทอรีชั่วคราว
+            scale_factor: ปัจจัยการขยาย
+            loop_count: จำนวนรอบ (-1แทนรอบไม่จำกัด)
+            video_duration: เวลาวิดีโอ (วินาที) ใช้เพื่อให้GIFดำเนินการตลอดเวลาวิดีโอ
+            gif_rotation: องศาการหมุน (0-359 องศา)
             
-        返回:
-            处理后的GIF文件路径，失败返回None
+        คืนค่า:
+            เส้นทางไฟล์GIFที่ปรับปรุง ถ้าไม่สำเร็จคืนค่าNone
         """
         try:
             if not Path(gif_path).exists():
-                print(f"GIF文件不存在: {gif_path}")
+                print(f"GIFไฟล์ไม่มีอยู่: {gif_path}")
                 return None
             
-            # 输出路径
+            # เส้นทางเอาต์พุต
             processed_gif_path = temp_dir / "processed_animated_gif.gif"
             
-            # 如果提供了视频时长，计算需要的循环次数
+            # ถ้ามีเวลาวิดีโอ คำนวณจำนวนรอบที่จำเป็น
             if video_duration is not None:
-                # 获取原始GIF的持续时间
+                # ดึงระยะเวลาของGIFเริ่มต้น
                 gif_info_cmd = [
                     'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
                     '-of', 'default=noprint_wrappers=1:nokey=1', str(gif_path)
@@ -698,48 +710,48 @@ class VideoSubtitleProcessor:
                 try:
                     result = subprocess.run(gif_info_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                     gif_duration = float(result.stdout.decode().strip())
-                    print(f"原始GIF时长: {gif_duration} 秒")
+                    print(f"ระยะเวลาGIFเริ่มต้น: {gif_duration} วินาที")
                     
-                    # 计算需要循环的次数
+                    # คำนวณจำนวนรอบที่ต้องการ
                     if gif_duration > 0:
                         required_loops = int(video_duration / gif_duration) + 1
-                        print(f"视频时长: {video_duration} 秒，需要循环 {required_loops} 次")
+                        print(f"เวลาวิดีโอ: {video_duration} วินาที ต้องการรอบ {required_loops} รอบ")
                     else:
-                        required_loops = 10  # 默认循环10次
+                        required_loops = 10  # รอบเริ่มต้น 10 รอบ
                         
                 except Exception as e:
-                    print(f"获取GIF信息失败，使用默认循环次数: {e}")
+                    print(f"ดึงข้อมูลGIFไม่สำเร็จ ใช้รอบเริ่มต้น: {e}")
                     required_loops = 10
             else:
-                required_loops = 10  # 默认循环10次
+                required_loops = 10  # รอบเริ่มต้น 10 รอบ
                 
-            # 构建FFmpeg命令来处理GIF，保持动画特性
+            # สร้างคำสั่งFFmpegเพื่อประมวลผลGIF รักษาคุณสมบัติการเคลื่อนไหว
             gif_cmd = [
                 'ffmpeg', '-y',
-                '-stream_loop', str(required_loops),  # 循环播放
+                '-stream_loop', str(required_loops),  # วนซ้ำการเล่น
                 '-i', str(gif_path)
             ]
             
-            # 如果提供了视频时长，限制GIF时长
+            # ถ้ามีเวลาวิดีโอ จำกัดระยะเวลาGIF
             if video_duration is not None:
                 gif_cmd.extend(['-t', str(video_duration)])
             
-            # 添加缩放和旋转过滤器（如果需要）
+            # เพิ่มฟิลเตอร์ขยายและหมุน (ถ้าจำเป็น)
             filters = []
             if scale_factor != 1.0:
                 filters.append(f"scale=iw*{scale_factor}:ih*{scale_factor}")
             
-            # 添加旋转过滤器（总是添加以确保正确方向）
-            # FFmpeg的rotate滤镜是逆时针旋转，需要取负值来实现顺时针旋转
-            # 将角度转换为弧度，并取负值
-            # 只有在UI中调整了参数时才应用旋转角度
-            base_rotation = 0  # 不再使用基础旋转角度，只使用用户设置的旋转角度
+            # เพิ่มฟิลเตอร์หมุน (เพิ่มเสมอเพื่อให้แน่ใจว่าอยู่ในทิศทางที่ถูกต้อง)
+            # ฟิลเตอร์หมุนของFFmpeg เป็นการหมุนปีกซ้าย ต้องใช้ค่าติดลบเพื่อทำให้หมุนเป็นทิศทางปีกขวา
+            # แปลงองศาเป็นเรเดียน และใช้ค่าติดลบ
+            # ใช้เฉพาะเมื่อผู้ใช้ปรับค่า
+            base_rotation = 0  # ไม่ใช้แกนหมุนเริ่มต้น ใช้เฉพาะค่าที่ผู้ใช้ตั้ง
             actual_rotation = base_rotation + gif_rotation
             rotation_radians = -actual_rotation * 3.14159265359 / 180
             filters.append(f"rotate={rotation_radians}:fillcolor=none:bilinear=0")
-            print(f"【GIF旋转】应用旋转角度: {actual_rotation}度 (基础: {base_rotation}度 + 用户设置: {gif_rotation}度)")
+            print(f"【การหมุนGIF】ใช้องศา: {actual_rotation} องศา (เริ่มต้น: {base_rotation} องศา + ผู้ใช้ตั้ง: {gif_rotation} องศา)")
             
-            # 添加GIF处理过滤器，保持动画
+            # เพิ่มฟิลเตอร์ประมวลผลGIF รักษาการเคลื่อนไหว
             if filters:
                 filter_str = ",".join(filters)
                 gif_cmd.extend([
@@ -750,9 +762,9 @@ class VideoSubtitleProcessor:
                     '-vf', 'split[a][b];[a]palettegen=reserve_transparent=on:transparency_color=ffffff[p];[b][p]paletteuse=alpha_threshold=128'
                 ])
             
-            # 设置循环参数
+            # ตั้งค่าการวนซ้ำ
             if loop_count == -1:
-                gif_cmd.extend(['-loop', '0'])  # 无限循环
+                gif_cmd.extend(['-loop', '0'])  # วนซ้ำไม่จำกัด
             else:
                 gif_cmd.extend(['-loop', str(loop_count)])
             
@@ -761,14 +773,14 @@ class VideoSubtitleProcessor:
                 str(processed_gif_path)
             ])
             
-            print(f"【GIF动画处理】执行命令: {' '.join(gif_cmd)}")
+            print(f"【การประมวลผลภาพเคลื่อนไหวGIF】ประมวลผลคำสั่ง: {' '.join(gif_cmd)}")
             
             result = subprocess.run(gif_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            print(f"【GIF动画处理】处理成功: {processed_gif_path}")
+            print(f"【การประมวลผลภาพเคลื่อนไหวGIF】ประมวลผลสำเร็จ: {processed_gif_path}")
             return str(processed_gif_path)
             
         except subprocess.CalledProcessError as e:
-            print(f"【GIF动画处理】处理失败: {e}")
+            print(f"【การประมวลผลภาพเคลื่อนไหวGIF】ประมวลผลไม่สำเร็จ: {e}")
             print(f"stderr: {e.stderr.decode()}")
             return None
         except Exception as e:

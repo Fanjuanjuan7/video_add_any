@@ -1,36 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-视频处理主协调模块
-负责协调调用各个功能模块来完成视频处理任务
+视频处理主模块
+负责视频处理的主要逻辑
 """
 
 import os
 import sys
-from pathlib import Path
 import tempfile
 import shutil
-import random
+from pathlib import Path
 
 # 导入工具函数
-from utils import get_video_info, get_audio_duration, run_ffmpeg_command, get_data_path, ensure_dir
-
-# 导入各功能模块
-from video_background import create_rounded_rect_background, process_image_for_overlay
-from video_audio import trim_music_to_video_duration, add_tts_audio_to_video, generate_subtitle_tts
+from utils import get_video_info, get_audio_duration, run_ffmpeg_command
+from video_audio import generate_subtitle_tts, add_tts_audio_to_video
 from video_preprocessing import preprocess_video_by_type
-from video_subtitle_processor import VideoSubtitleProcessor
-from static_subtitle import create_static_subtitle as create_subtitle_image
+from log_manager import log_with_capture
 
-# 导入日志管理器
-from log_manager import init_logging, log_with_capture
-
-# 初始化日志系统
-log_manager = init_logging()
-
-# 创建全局字幕处理器实例
-_subtitle_processor = VideoSubtitleProcessor()
-
+# 导入字幕处理器
+from video_subtitle_processor import _subtitle_processor
 
 @log_with_capture
 def process_video(video_path, output_path=None, style=None, subtitle_lang=None, 
@@ -119,6 +107,11 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
             
         width, height, duration = video_info
         print(f"视频信息: {width}x{height}, {duration}秒")
+        
+        # 如果启用了动态字幕，使用动态字幕的位置参数
+        if enable_dynamic_subtitle:
+            position_x = dynamic_subtitle_x
+            position_y = dynamic_subtitle_y
         
         # 对视频进行预处理（水印处理、正放倒放等）
         print(f"对视频进行预处理...")
@@ -322,147 +315,3 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
             print(f"清理临时目录失败: {e}")
             # 不抛出异常，避免影响主流程
             pass
-
-
-def batch_process_videos(style=None, subtitle_lang=None, quicktime_compatible=False, 
-                         img_position_x=100, img_position_y=0, font_size=70, 
-                         subtitle_x=-50, subtitle_y=1100, bg_width=1000, bg_height=180, img_size=420,
-                         subtitle_text_x=0, subtitle_text_y=1190, enable_subtitle=True):
-    """
-    批量处理视频
-    
-    参数:
-        style: 字幕样式，如果为None则每个视频随机选择，如果为"random"则强制每个视频随机选择
-        subtitle_lang: 字幕语言，如果为"malay"则所有视频使用马来西亚字幕，如果为"thai"则所有视频使用泰国字幕
-        quicktime_compatible: 是否生成QuickTime兼容的视频
-        img_position_x: 图片X轴绝对坐标（像素，默认100）
-        img_position_y: 图片Y轴绝对坐标（像素，默认0）
-        font_size: 字体大小（像素，默认70）
-        subtitle_x: 背景X轴绝对坐标（像素，默认-50）
-        subtitle_y: 背景Y轴绝对坐标（像素，默认1100）
-        bg_width: 背景宽度（像素，默认1000）
-        bg_height: 背景高度（像素，默认180）
-        img_size: 图片大小（像素，默认420）
-        subtitle_text_x: 字幕X轴绝对坐标（像素，默认0）
-        subtitle_text_y: 字幕Y轴绝对坐标（像素，默认1190）
-        enable_subtitle: 是否启用字幕
-        
-    返回:
-        处理成功的视频数量
-    """
-    # 确保字幕语言是有效的选择
-    if subtitle_lang not in ["malay", "thai", None, "random"]:
-        print(f"警告：无效的字幕语言 '{subtitle_lang}'，将使用默认值")
-        subtitle_lang = None
-    
-    # 如果是random，随机选择一种语言并固定使用
-    if subtitle_lang == "random":
-        subtitle_lang = random.choice(["malay", "thai"])
-        print(f"随机选择并固定使用语言: {subtitle_lang}")
-    
-    print(f"批量处理视频，样式: {'随机' if style is None or style == 'random' else style}, 语言: {subtitle_lang}, QuickTime兼容模式: {'启用' if quicktime_compatible else '禁用'}")
-    print(f"图片位置: X={img_position_x}, Y={img_position_y}, 大小={img_size}")
-    print(f"字幕背景位置: X={subtitle_x}, Y={subtitle_y}, 宽={bg_width}, 高={bg_height}")
-    print(f"字幕文字位置: X={subtitle_text_x}, Y={subtitle_text_y}, 字体大小={font_size}")
-    print(f"字幕启用状态: {enable_subtitle}")
-    
-    # 获取视频目录
-    videos_dir = get_data_path("input/videos")
-    # 修改为指定的输出目录
-    # 使用相对路径的output目录
-    output_dir = Path("output")
-    
-    # 确保目录存在
-    if not Path(videos_dir).exists():
-        Path(videos_dir).mkdir(parents=True, exist_ok=True)
-    if not output_dir.exists():
-        output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # 获取所有视频文件
-    video_extensions = ['.mp4', '.mov', '.avi', '.wmv', '.mkv']
-    video_files = []
-    
-    for ext in video_extensions:
-        video_files.extend(list(Path(videos_dir).glob(f"*{ext}")))
-    
-    if not video_files:
-        print("没有找到视频文件")
-        return 0
-    
-    print(f"找到 {len(video_files)} 个视频文件")
-    
-    # 处理每个视频
-    success_count = 0
-    last_style = None  # 记录上一个视频使用的样式
-    
-    # 预先创建所有可能的样式
-    all_styles = ["style1", "style2", "style3", "style4", "style5", "style6", "style7", "style8", "style9", "style10", "style11"]
-    
-    for video_path in video_files:
-        print(f"\n处理视频: {video_path.name}")
-        output_path = output_dir / f"{video_path.stem}_processed.mp4"
-        
-        # 为每个视频独立随机选择样式
-        current_style = None
-        if style == "random" or style is None:
-            # 当style为"random"或None时，确保不会连续使用相同的样式
-            available_styles = [s for s in all_styles if s != last_style]
-            
-            # 如果所有样式都已使用过一次，重置可用样式列表
-            if len(available_styles) == 0:
-                available_styles = all_styles.copy()
-                if last_style in available_styles:
-                    available_styles.remove(last_style)
-            
-            current_style = random.choice(available_styles)
-            last_style = current_style
-            
-            print(f"随机选择样式（避免重复）: {current_style}")
-        else:
-            # 使用指定的样式
-            current_style = style
-            print(f"使用指定样式: {current_style}")
-        
-        try:
-            if process_video(
-                video_path, 
-                output_path, 
-                current_style, 
-                subtitle_lang,
-                quicktime_compatible=quicktime_compatible,
-                img_position_x=img_position_x,
-                img_position_y=img_position_y,
-                font_size=font_size,
-                subtitle_x=subtitle_x,
-                subtitle_y=subtitle_y,
-                bg_width=bg_width,
-                bg_height=bg_height,
-                img_size=img_size,
-                subtitle_text_x=subtitle_text_x,
-                subtitle_text_y=subtitle_text_y,
-                enable_subtitle=enable_subtitle
-            ):
-                success_count += 1
-                print(f"✅ 视频处理成功: {video_path.name}")
-            else:
-                print(f"❌ 视频处理失败: {video_path.name}")
-        except Exception as e:
-            print(f"❌ 处理视频时出错: {e}")
-    
-    print(f"\n批量处理完成: {success_count}/{len(video_files)} 个视频成功")
-    return success_count
-
-
-# 主函数用于测试
-if __name__ == "__main__":
-    # 如果有命令行参数，处理指定视频
-    if len(sys.argv) > 1:
-        video_path = sys.argv[1]
-        output_path = None
-        if len(sys.argv) > 2:
-            output_path = sys.argv[2]
-            
-        process_video(video_path, output_path)
-    else:
-        # 否则批量处理所有视频
-        batch_process_videos()
