@@ -436,24 +436,24 @@ def process_folder_videos(folder_path, temp_dir, transition_duration=0.3):
                 # 如果获取失败，使用默认值5秒
                 video_durations.append(5.0)
         
-        # 计算累积时间偏移
-        cumulative_offset = 0.0
+        # 计算转场偏移时间
         print(f"开始计算转场偏移...")
         
         # 对于多个视频，需要链式应用xfade
+        # xfade的offset是相对于当前滤镜链输出的时间偏移
         for i in range(len(processed_videos) - 1):
             if i == 0:
-                # 第一个xfade
-                filter_complex_parts.append(f"[0:v][1:v]xfade=transition=fade:duration={transition_duration}:offset={cumulative_offset}[tmp0]")
-                print(f"第1个转场: 偏移={cumulative_offset:.2f}秒")
+                # 第一个xfade的偏移：第一个视频时长减去转场时间
+                offset = video_durations[0] - transition_duration
+                filter_complex_parts.append(f"[0:v][1:v]xfade=transition=fade:duration={transition_duration}:offset={offset}[tmp0]")
+                print(f"第1个转场: 偏移={offset:.2f}秒")
             else:
-                # 后续的xfade，使用前一个结果
-                filter_complex_parts.append(f"[tmp{i-1}][{i+1}:v]xfade=transition=fade:duration={transition_duration}:offset={cumulative_offset}[tmp{i}]")
-                print(f"第{i+1}个转场: 偏移={cumulative_offset:.2f}秒")
-            
-            # 更新累积偏移：前一个视频的时长减去转场时间
-            cumulative_offset += video_durations[i] - transition_duration
-            print(f"  更新累积偏移: {cumulative_offset:.2f}秒 (前一个视频时长: {video_durations[i]:.2f}秒)")
+                # 后续xfade的偏移：前面所有视频的总时长减去已有的转场时间，再减去当前转场时间
+                # 计算到当前转场开始时的总时长
+                total_duration_before = sum(video_durations[:i+1]) - i * transition_duration
+                offset = total_duration_before - transition_duration
+                filter_complex_parts.append(f"[tmp{i-1}][{i+1}:v]xfade=transition=fade:duration={transition_duration}:offset={offset}[tmp{i}]")
+                print(f"第{i+1}个转场: 偏移={offset:.2f}秒 (前面总时长={total_duration_before:.2f}秒)")
         
         # 最后一个tmp是最终输出
         filter_complex = ";".join(filter_complex_parts)
