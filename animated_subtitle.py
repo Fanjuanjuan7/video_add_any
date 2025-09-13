@@ -296,7 +296,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     
     @log_with_capture
     def create_dynamic_subtitle(self, text, width=800, height=500, font_size=None, output_path=None, tts_audio_path=None,
-                               font_color="#FFFFFF", outline_size=2, outline_color="#000000", animation_duration=0.3, opacity=100):
+                               font_color="#FFFFFF", outline_size=2, outline_color="#000000", animation_duration=0.3, opacity=100,
+                               position_x=None, position_y=None):
         """
         创建动态字幕文件（ASS格式）
         
@@ -338,6 +339,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 output_path = "dynamic_subtitle.ass"
             elif not output_path.endswith('.ass'):
                 output_path = output_path.replace('.png', '.ass')
+            
+            # 设置位置参数
+            if position_x is not None:
+                self.position_x = position_x
+            if position_y is not None:
+                self.position_y = position_y
             
             # 生成ASS字幕文件
             ass_content = self._generate_ass_subtitle(text, audio_duration, width, height, font_size, font_color, outline_size, outline_color, animation_duration, opacity)
@@ -389,6 +396,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         primary_color_with_alpha = f"&H{alpha_value}{primary_color[2:]}"
         outline_color_with_alpha = f"&H{alpha_value}{outline_color_ass[2:]}"
         
+        # 获取字幕位置参数
+        raw_position_x = getattr(self, 'position_x', 50)  # 默认50%
+        raw_position_y = getattr(self, 'position_y', 85)  # 默认85%
+        
+        # 将百分比转换为像素坐标
+        position_x = int(width * raw_position_x / 100)
+        position_y = int(height * raw_position_y / 100)
+        
         # ASS文件头部
         ass_header = f"""[Script Info]
 Title: Dynamic Subtitle
@@ -401,12 +416,12 @@ PlayResY: {height}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,{font_size},{primary_color_with_alpha},&H000000FF,{outline_color_with_alpha},&H80000000,0,0,0,0,100,100,0,0,1,{outline_size},0,2,10,10,10,1
-Style: Highlight,Arial,{int(font_size * 1.2)},{primary_color_with_alpha},&H000000FF,{outline_color_with_alpha},&H80000000,1,0,0,0,110,110,0,0,1,{outline_size+1},0,2,10,10,10,1
-Style: Bounce,Arial,{font_size},{primary_color_with_alpha},&H000000FF,{outline_color_with_alpha},&H80000000,0,0,0,0,100,100,0,0,1,{outline_size},0,2,10,10,10,1
-Style: Glow,Arial,{font_size},{primary_color_with_alpha},&H000000FF,{outline_color_with_alpha},&H80000000,0,0,0,0,100,100,0,0,1,{outline_size+1},0,2,10,10,10,1
-Style: Typewriter,Arial,{font_size},{primary_color_with_alpha},&H000000FF,{outline_color_with_alpha},&H80000000,0,0,0,0,100,100,0,0,1,{outline_size},0,2,10,10,10,1
-Style: Slide,Arial,{font_size},{primary_color_with_alpha},&H000000FF,{outline_color_with_alpha},&H80000000,0,0,0,0,100,100,0,0,1,{outline_size},0,2,10,10,10,1
+Style: Default,Arial,{font_size},{primary_color_with_alpha},&H000000FF,{outline_color_with_alpha},&H80000000,0,0,0,0,100,100,0,0,1,{outline_size},0,5,10,10,10,1
+Style: Highlight,Arial,{int(font_size * 1.2)},{primary_color_with_alpha},&H000000FF,{outline_color_with_alpha},&H80000000,1,0,0,0,110,110,0,0,1,{outline_size+1},0,5,10,10,10,1
+Style: Bounce,Arial,{font_size},{primary_color_with_alpha},&H000000FF,{outline_color_with_alpha},&H80000000,0,0,0,0,100,100,0,0,1,{outline_size},0,5,10,10,10,1
+Style: Glow,Arial,{font_size},{primary_color_with_alpha},&H000000FF,{outline_color_with_alpha},&H80000000,0,0,0,0,100,100,0,0,1,{outline_size+1},0,5,10,10,10,1
+Style: Typewriter,Arial,{font_size},{primary_color_with_alpha},&H000000FF,{outline_color_with_alpha},&H80000000,0,0,0,0,100,100,0,0,1,{outline_size},0,5,10,10,10,1
+Style: Slide,Arial,{font_size},{primary_color_with_alpha},&H000000FF,{outline_color_with_alpha},&H80000000,0,0,0,0,100,100,0,0,1,{outline_size},0,5,10,10,10,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -437,7 +452,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             elif animation_style == "弹跳效果":
                 style = "Bounce"
                 bounce_height = int(10 * getattr(self, 'animation_intensity', 1.5))
-                effect = f"{{\\move({width//2},{height-100},{width//2},{height-100-bounce_height},0,{int(animation_duration*500)})\\move({width//2},{height-100-bounce_height},{width//2},{height-100},{int(animation_duration*500)},{int(animation_duration*1000)})}}"
+                effect = f"{{\\move({position_x},{position_y},{position_x},{position_y-bounce_height},0,{int(animation_duration*500)})\\move({position_x},{position_y-bounce_height},{position_x},{position_y},{int(animation_duration*500)},{int(animation_duration*1000)})}}"
             elif animation_style == "发光效果":
                 style = "Glow"
                 highlight_color = hex_to_ass_color(getattr(self, 'highlight_color', '#FFD700'))
@@ -449,19 +464,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             elif animation_style == "滑入效果":
                 style = "Slide"
                 # 从左侧滑入效果
-                effect = f"{{\\pos({-100},{height-100})\\t(0,{int(animation_duration*1000)},\\pos({width//2},{height-100}))}}"
+                effect = f"{{\\pos({-100},{position_y})\\t(0,{int(animation_duration*1000)},\\pos({position_x},{position_y}))}}"
             else:
                 style = "Default"
                 effect = ""
             
-            # 创建事件行
+            # 创建事件行，使用动态位置
+            if not effect:  # 如果没有特殊效果，使用pos标签设置位置
+                effect = f"{{\\pos({position_x},{position_y})}}"
             event_line = f"Dialogue: 0,{start_ass},{end_ass},{style},,0,0,0,,{effect}{word}"
             events.append(event_line)
         
         # 添加完整文本显示（作为背景）
         full_start = self._seconds_to_ass_time(0)
         full_end = self._seconds_to_ass_time(duration)
-        full_text_event = f"Dialogue: 0,{full_start},{full_end},Default,,0,0,0,,{{\\alpha&H80&}}{text}"
+        full_text_event = f"Dialogue: 0,{full_start},{full_end},Default,,0,0,0,,{{\\alpha&H80&\\pos({position_x},{position_y})}}{text}"
         events.insert(0, full_text_event)
         
         return ass_header + "\n".join(events)
@@ -858,7 +875,9 @@ class DynamicSubtitleProcessor:
             outline_size=self.outline_size,
             outline_color=self.outline_color,
             animation_duration=self.animation_duration,
-            opacity=self.opacity
+            opacity=self.opacity,
+            position_x=self.position_x,
+            position_y=self.position_y
         )
 
 

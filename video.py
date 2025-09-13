@@ -30,7 +30,7 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
                  gif_path="", gif_loop_count=-1, gif_scale=1.0, gif_rotation=0, gif_x=800, gif_y=100, scale_factor=1.1, 
                  image_path=None, subtitle_width=500, quality_settings=None, progress_callback=None,
                  video_index=0, enable_tts=False, tts_voice="zh-CN-XiaoxiaoNeural", 
-                 tts_volume=100, tts_text="", auto_match_duration=False,
+                 tts_volume=100, tts_text="", auto_match_duration=False, voice_speed=1.0,
                  enable_dynamic_subtitle=False, animation_style="高亮放大", animation_intensity=1.5, highlight_color="#FFD700",
                  match_mode="随机样式", position_x=540, position_y=960,
                  # 新增的动态字幕参数
@@ -162,7 +162,7 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
                                     remaining_ratio /= 2.0
                                 while remaining_ratio < 0.5:
                                     filter_parts.append('atempo=0.5')
-                                    remaining_ratio /= 0.5
+                                    remaining_ratio *= 2.0  # 修复：应该乘以2.0而不是除以0.5
                                 
                                 if remaining_ratio != 1.0:
                                     filter_parts.append(f'atempo={remaining_ratio:.3f}')
@@ -191,6 +191,49 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
                                 print(f"[自动匹配时长] 变速系数接近1.0，无需调整")
                         else:
                             print("[自动匹配时长] 无法获取音频时长，跳过变速处理")
+                    
+                    # 如果没有启用自动匹配时长，但设置了手动变速，应用手动变速
+                    elif voice_speed != 1.0:
+                        print(f"[手动变速] 开始应用手动变速，系数: {voice_speed}")
+                        manual_speed_audio_path = temp_dir / "tts_audio_manual_speed.mp3"
+                        
+                        # 使用FFmpeg的atempo滤镜调整音频速度
+                        tempo_cmd = ['ffmpeg', '-y', '-i', str(tts_audio_path)]
+                        
+                        # 构建atempo滤镜链
+                        filter_parts = []
+                        remaining_ratio = voice_speed
+                        
+                        while remaining_ratio > 2.0:
+                            filter_parts.append('atempo=2.0')
+                            remaining_ratio /= 2.0
+                        while remaining_ratio < 0.5:
+                            filter_parts.append('atempo=0.5')
+                            remaining_ratio *= 2.0  # 修复：应该乘以2.0而不是除以0.5
+                        
+                        if remaining_ratio != 1.0:
+                            filter_parts.append(f'atempo={remaining_ratio:.3f}')
+                        
+                        if filter_parts:
+                            filter_complex = ','.join(filter_parts)
+                            tempo_cmd.extend(['-filter:a', filter_complex])
+                        
+                        tempo_cmd.extend(['-c:a', 'mp3', str(manual_speed_audio_path)])
+                        
+                        print(f"[手动变速] 执行变速命令: {' '.join(tempo_cmd)}")
+                        if run_ffmpeg_command(tempo_cmd):
+                            if manual_speed_audio_path.exists() and manual_speed_audio_path.stat().st_size > 0:
+                                tts_audio_path = manual_speed_audio_path
+                                print(f"[手动变速] 变速处理成功: {tts_audio_path}")
+                                
+                                # 验证调整后的音频时长
+                                new_duration = get_audio_duration(str(tts_audio_path))
+                                if new_duration:
+                                    print(f"[手动变速] 调整后音频时长: {new_duration:.2f}秒")
+                            else:
+                                print("[手动变速] 变速处理失败，使用原始音频")
+                        else:
+                            print("[手动变速] 变速命令执行失败，使用原始音频")
                 else:
                     print("TTS音频文件不存在或为空")
                     tts_audio_path = None
@@ -251,8 +294,8 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
             animation_intensity=animation_intensity,
             highlight_color=highlight_color,
             match_mode=match_mode,
-            position_x=position_x,
-            position_y=position_y,
+            position_x=dynamic_subtitle_x,
+            position_y=dynamic_subtitle_y,
             # 新增的动态字幕参数
             dynamic_font_size=dynamic_font_size,
             dynamic_font_color=dynamic_font_color,

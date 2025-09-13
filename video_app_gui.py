@@ -67,6 +67,7 @@ class ProcessingThread(QThread):
                  document_path=None, enable_gif=False, gif_path="", gif_loop_count=-1, 
                  gif_scale=1.0, gif_rotation=0, gif_x=800, gif_y=100, scale_factor=1.1, image_path=None, quality_settings=None,
                  enable_tts=False, tts_voice="zh-CN-XiaoxiaoNeural", tts_volume=100, tts_text="", auto_match_duration=True,
+                 voice_speed=1.0,  # 添加手动变速参数
                  enable_dynamic_subtitle=False, animation_style="highlight", animation_intensity=1.5, 
                  highlight_color="#FFD700", match_mode="fixed",
                  # 添加新的动态字幕参数
@@ -118,6 +119,7 @@ class ProcessingThread(QThread):
         self.tts_volume = tts_volume
         self.tts_text = tts_text  # 用户输入的固定TTS文本
         self.auto_match_duration = auto_match_duration  # 添加自动匹配时长参数
+        self.voice_speed = voice_speed  # 添加手动变速参数
         self.user_document_path = document_path  # 保存用户指定的文档路径
         
         # 动态字幕相关参数
@@ -471,6 +473,7 @@ class ProcessingThread(QThread):
                             tts_volume=self.tts_volume,
                             tts_text=current_tts_text,
                             auto_match_duration=self.auto_match_duration,  # 添加自动匹配时长参数
+                            voice_speed=self.voice_speed,  # 添加手动变速参数
                             # 添加动态字幕参数
                             enable_dynamic_subtitle=self.enable_dynamic_subtitle,
                             animation_style=self.animation_style,
@@ -1127,7 +1130,7 @@ class VideoProcessorApp(QMainWindow):
         self.lang_combo.addItem("马来语", "malay")
         self.lang_combo.addItem("泰语", "thai")
         
-        self.quicktime_check = QCheckBox("QuickTime兼容模式")
+        # self.quicktime_check = QCheckBox("QuickTime兼容模式")  # 已删除，设置中已有
         
         # 添加字体大小调节
         self.font_size = QSpinBox()
@@ -1177,7 +1180,7 @@ class VideoProcessorApp(QMainWindow):
         style_layout.addWidget(self.subtitle_text_x, 6, 1)
         style_layout.addWidget(QLabel("Y坐标 (像素):"), 7, 0)
         style_layout.addWidget(self.subtitle_text_y, 7, 1)
-        style_layout.addWidget(self.quicktime_check, 8, 0, 1, 2)
+        # style_layout.addWidget(self.quicktime_check, 8, 0, 1, 2)  # 已删除quicktime兼容模式勾选框
         
         style_group.setLayout(style_layout)
         
@@ -1275,7 +1278,7 @@ class VideoProcessorApp(QMainWindow):
         
         # 智能语音组
         material_group = QGroupBox("智能语音")
-        material_group.setMinimumHeight(180)  # 设置最小高度
+        material_group.setMinimumHeight(220)  # 增加最小高度以容纳新控件
         material_layout = QGridLayout()
         material_layout.setSpacing(6)  # 减少素材选择组间距
         material_layout.setContentsMargins(8, 8, 8, 8)  # 减少素材选择组边距
@@ -1293,6 +1296,15 @@ class VideoProcessorApp(QMainWindow):
         # 音色选择
         self.voice_type_combo = QComboBox()
         self.populate_voice_types()  # 填充音色选项
+        
+        # 手动配音变速参数
+        self.voice_speed_spinbox = QDoubleSpinBox()
+        self.voice_speed_spinbox.setRange(0.5, 2.0)
+        self.voice_speed_spinbox.setValue(1.0)
+        self.voice_speed_spinbox.setSingleStep(0.1)
+        self.voice_speed_spinbox.setDecimals(1)
+        self.voice_speed_spinbox.setToolTip("手动调整配音播放速度，当自动匹配时长关闭时生效")
+        self.voice_speed_spinbox.setEnabled(False)  # 默认禁用，当自动匹配时长关闭时启用
         
         # 自动匹配时长
         self.auto_match_duration = QCheckBox("自动匹配时长")
@@ -1319,9 +1331,11 @@ class VideoProcessorApp(QMainWindow):
         material_layout.addWidget(self.voice_language_combo, 1, 1)
         material_layout.addWidget(QLabel("音色:"), 2, 0)
         material_layout.addWidget(self.voice_type_combo, 2, 1)
-        material_layout.addWidget(self.auto_match_duration, 3, 0, 1, 2)  # 添加自动匹配时长控件
-        material_layout.addWidget(QLabel("音量:"), 4, 0)
-        material_layout.addLayout(voice_volume_layout, 4, 1)
+        material_layout.addWidget(QLabel("变速:"), 3, 0)
+        material_layout.addWidget(self.voice_speed_spinbox, 3, 1)
+        material_layout.addWidget(self.auto_match_duration, 4, 0, 1, 2)  # 添加自动匹配时长控件
+        material_layout.addWidget(QLabel("音量:"), 5, 0)
+        material_layout.addLayout(voice_volume_layout, 5, 1)
         
         material_group.setLayout(material_layout)
         
@@ -1807,12 +1821,13 @@ class VideoProcessorApp(QMainWindow):
         voice_layout.addWidget(QLabel("TTS文本:"), 2, 0)
         voice_layout.addWidget(self.tts_text_input, 2, 1, 1, 2)
         
-        # 自动匹配时长
-        self.auto_match_duration = QCheckBox("自动匹配时长")
-        self.auto_match_duration.setChecked(True)
-        self.auto_match_duration.setToolTip("勾选后会通过调节播放速度使音频时长与视频一致，检测视频时长和生成的配音时长，通过让配音时长变速去匹配视频时长")
+        # 自动匹配时长（修复：添加事件处理器以实现联动）
+        self.settings_auto_match_duration = QCheckBox("自动匹配时长")
+        self.settings_auto_match_duration.setChecked(True)
+        self.settings_auto_match_duration.setToolTip("勾选后会通过调节播放速度使音频时长与视频一致，检测视频时长和生成的配音时长，通过让配音时长变速去匹配视频时长")
+        self.settings_auto_match_duration.stateChanged.connect(self.on_settings_auto_match_duration_changed)  # 添加事件处理器
         
-        voice_layout.addWidget(self.auto_match_duration, 3, 0)
+        voice_layout.addWidget(self.settings_auto_match_duration, 3, 0)
         
         # TTS音量控制
         tts_volume_layout = QHBoxLayout()
@@ -2224,7 +2239,7 @@ class VideoProcessorApp(QMainWindow):
         lang = self.lang_combo.itemData(lang_idx)
         
         # 获取所有设置参数
-        quicktime_compatible = self.quicktime_check.isChecked()
+        quicktime_compatible = self.default_qt_check.isChecked()  # 使用设置中的QuickTime兼容模式
         img_position_x = self.img_x.value()
         img_position_y = self.img_y.value()
         font_size = self.font_size.value()
@@ -2304,6 +2319,9 @@ class VideoProcessorApp(QMainWindow):
         # 获取自动匹配时长参数
         auto_match_duration = self.auto_match_duration.isChecked()
         
+        # 获取手动变速参数
+        voice_speed = self.voice_speed_spinbox.value() if hasattr(self, 'voice_speed_spinbox') else 1.0
+        
         # 检查是否启用了智能语音
         if self.enable_voice.isChecked():
             enable_tts = True
@@ -2351,7 +2369,7 @@ class VideoProcessorApp(QMainWindow):
             enable_music, music_path, music_mode, music_volume,
             document_path, enable_gif, gif_path, gif_loop_count, gif_scale, gif_rotation, gif_x, gif_y, scale_factor, image_path,
             quality_settings,  # 添加质量设置参数
-            enable_tts, tts_voice, tts_volume, tts_text, auto_match_duration,  # 添加TTS参数和自动匹配时长参数
+            enable_tts, tts_voice, tts_volume, tts_text, auto_match_duration, voice_speed,  # 添加TTS参数、自动匹配时长参数和手动变速参数
             enable_dynamic_subtitle, animation_style, animation_intensity, highlight_color, match_mode,  # 添加动态字幕参数
             # 添加新的动态字幕参数
             dynamic_font_size, dynamic_font_color, dynamic_outline_size, 
@@ -2627,7 +2645,7 @@ class VideoProcessorApp(QMainWindow):
         # QuickTime兼容模式
         quicktime = self.settings.value("default_quicktime", False, type=bool)
         self.default_qt_check.setChecked(quicktime)
-        self.quicktime_check.setChecked(quicktime)
+        # self.quicktime_check.setChecked(quicktime)  # 已删除，使用设置中的default_qt_check
         
         # 路径设置
         if save_paths:
@@ -2685,6 +2703,7 @@ class VideoProcessorApp(QMainWindow):
         self.gif_path.setText(self.settings.value("gif_path", ""))
         self.gif_loop_count.setValue(self.settings.value("gif_loop_count", -1, type=int))
         self.gif_scale.setValue(self.settings.value("gif_scale", 1.0, type=float))
+        self.gif_rotation.setValue(self.settings.value("gif_rotation", 0, type=int))  # 添加旋转参数加载
         self.gif_x.setValue(self.settings.value("gif_x", 800, type=int))
         self.gif_y.setValue(self.settings.value("gif_y", 100, type=int))
         
@@ -2710,10 +2729,9 @@ class VideoProcessorApp(QMainWindow):
         auto_match_duration = self.settings.value("auto_match_duration", True, type=bool)
         self.auto_match_duration.setChecked(auto_match_duration)
         
-        # 同步视频处理标签页和设置标签页中的自动匹配时长控件
-        if hasattr(self, 'material_group') and self.material_group.findChild(QCheckBox, "auto_match_duration"):
-            material_auto_match = self.material_group.findChild(QCheckBox, "auto_match_duration")
-            material_auto_match.setChecked(auto_match_duration)
+        # 同步设置标签页中的自动匹配时长控件
+        if hasattr(self, 'settings_auto_match_duration'):
+            self.settings_auto_match_duration.setChecked(auto_match_duration)
         
         # 文档路径
         self.document_path.setText(self.settings.value("document_path", ""))
@@ -2749,6 +2767,20 @@ class VideoProcessorApp(QMainWindow):
             self.dynamic_outline_color_value = dynamic_outline_color
             self.dynamic_outline_color.setStyleSheet(f"background-color: {self.dynamic_outline_color_value}; border: 1px solid #555555; border-radius: 4px; min-height: 24px;")
         
+        # 加载动态字幕新增参数（修复：添加遗漏的参数加载）
+        if hasattr(self, 'dynamic_font_size') and self.settings.value("dynamic_font_size") is not None:
+            self.dynamic_font_size.setValue(self.settings.value("dynamic_font_size", type=int))
+        if hasattr(self, 'dynamic_outline_size') and self.settings.value("dynamic_outline_size") is not None:
+            self.dynamic_outline_size.setValue(self.settings.value("dynamic_outline_size", type=int))
+        if hasattr(self, 'dynamic_subtitle_x') and self.settings.value("dynamic_subtitle_x") is not None:
+            self.dynamic_subtitle_x.setValue(self.settings.value("dynamic_subtitle_x", type=int))
+        if hasattr(self, 'dynamic_subtitle_y') and self.settings.value("dynamic_subtitle_y") is not None:
+            self.dynamic_subtitle_y.setValue(self.settings.value("dynamic_subtitle_y", type=int))
+        if hasattr(self, 'animation_duration') and self.settings.value("animation_duration") is not None:
+            self.animation_duration.setValue(self.settings.value("animation_duration", type=float))
+        if hasattr(self, 'dynamic_opacity') and self.settings.value("dynamic_opacity") is not None:
+            self.dynamic_opacity.setValue(self.settings.value("dynamic_opacity", type=int))
+        
         # 加载质量设置参数
         if hasattr(self, 'crf_value'):
             self.crf_value.setValue(self.settings.value("crf_value", 18, type=int))
@@ -2783,26 +2815,38 @@ class VideoProcessorApp(QMainWindow):
                 self.pixfmt_combo.setCurrentIndex(pixfmt_index)
     
     def on_auto_match_duration_changed(self, state):
-        """处理自动匹配时长勾选框状态变化"""
-        # 同步设置标签页和视频处理标签页中的自动匹配时长控件
+        """处理视频处理标签页中自动匹配时长勾选框状态变化"""
         is_checked = state == Qt.CheckState.Checked
         
-        # 更新设置标签页中的控件（如果存在）
-        if hasattr(self, 'voice_group'):
-            settings_auto_match = self.voice_group.findChild(QCheckBox, "auto_match_duration")
-            if settings_auto_match and settings_auto_match.isChecked() != is_checked:
-                settings_auto_match.setChecked(is_checked)
+        # 同步设置标签页中的控件
+        if hasattr(self, 'settings_auto_match_duration'):
+            if self.settings_auto_match_duration.isChecked() != is_checked:
+                self.settings_auto_match_duration.blockSignals(True)  # 阻止信号循环
+                self.settings_auto_match_duration.setChecked(is_checked)
+                self.settings_auto_match_duration.blockSignals(False)
         
-        # 更新视频处理标签页中的控件（如果存在）
-        if hasattr(self, 'material_group'):
-            material_auto_match = self.material_group.findChild(QCheckBox, "auto_match_duration")
-            if material_auto_match and material_auto_match.isChecked() != is_checked:
-                material_auto_match.setChecked(is_checked)
+        # 控制手动变速参数框的启用状态
+        if hasattr(self, 'voice_speed_spinbox'):
+            self.voice_speed_spinbox.setEnabled(not is_checked)  # 自动匹配时长开启时禁用手动变速
         
-        print(f"【自动匹配时长】状态变化: checked={is_checked}")
+        print(f"【自动匹配时长】视频处理标签页状态变化: checked={is_checked}")
+        print(f"【手动变速】参数框状态: enabled={not is_checked}")
         
         # 更新音乐控件状态
         self.on_music_enabled_changed(Qt.CheckState.Checked if self.enable_music.isChecked() else Qt.CheckState.Unchecked)
+    
+    def on_settings_auto_match_duration_changed(self, state):
+        """处理设置标签页中自动匹配时长勾选框状态变化"""
+        is_checked = state == Qt.CheckState.Checked
+        
+        # 同步视频处理标签页中的控件
+        if hasattr(self, 'auto_match_duration'):
+            if self.auto_match_duration.isChecked() != is_checked:
+                self.auto_match_duration.blockSignals(True)  # 阻止信号循环
+                self.auto_match_duration.setChecked(is_checked)
+                self.auto_match_duration.blockSignals(False)
+        
+        print(f"【自动匹配时长】设置标签页状态变化: checked={is_checked}")
     
     def save_settings(self):
         """保存设置"""
@@ -2811,7 +2855,7 @@ class VideoProcessorApp(QMainWindow):
         
         # 应用QuickTime兼容模式设置
         quicktime = self.default_qt_check.isChecked()
-        self.quicktime_check.setChecked(quicktime)
+        # self.quicktime_check.setChecked(quicktime)  # 已删除，使用设置中的default_qt_check
         
         # 保存当前设置
         self.save_current_settings()
@@ -2851,10 +2895,11 @@ class VideoProcessorApp(QMainWindow):
         self.settings.setValue("enable_voice", self.enable_voice.isChecked())
         self.settings.setValue("enable_gif", self.enable_gif.isChecked())
         
-        # 保存GIF设置
+        # 保存GIF设置（修复：添加gif_rotation持久化）
         self.settings.setValue("gif_path", self.gif_path.text())
         self.settings.setValue("gif_loop_count", self.gif_loop_count.value())
         self.settings.setValue("gif_scale", self.gif_scale.value())
+        self.settings.setValue("gif_rotation", self.gif_rotation.value())  # 添加旋转参数保存
         self.settings.setValue("gif_x", self.gif_x.value())
         self.settings.setValue("gif_y", self.gif_y.value())
         
@@ -2877,7 +2922,7 @@ class VideoProcessorApp(QMainWindow):
         if hasattr(self, 'image_path'):
             self.settings.setValue("image_path", self.image_path.text())
         
-        # 保存动态字幕设置
+        # 保存动态字幕设置（修复：添加遗漏的参数持久化）
         self.settings.setValue("enable_dynamic_subtitle", self.enable_dynamic_subtitle.isChecked())
         self.settings.setValue("animation_style_idx", self.animation_style_combo.currentIndex())
         self.settings.setValue("animation_intensity", self.animation_intensity.value())
@@ -2886,6 +2931,19 @@ class VideoProcessorApp(QMainWindow):
         # 保存动态字幕颜色设置
         self.settings.setValue("dynamic_font_color", self.dynamic_font_color_value)
         self.settings.setValue("dynamic_outline_color", self.dynamic_outline_color_value)
+        # 保存动态字幕新增参数
+        if hasattr(self, 'dynamic_font_size'):
+            self.settings.setValue("dynamic_font_size", self.dynamic_font_size.value())
+        if hasattr(self, 'dynamic_outline_size'):
+            self.settings.setValue("dynamic_outline_size", self.dynamic_outline_size.value())
+        if hasattr(self, 'dynamic_subtitle_x'):
+            self.settings.setValue("dynamic_subtitle_x", self.dynamic_subtitle_x.value())
+        if hasattr(self, 'dynamic_subtitle_y'):
+            self.settings.setValue("dynamic_subtitle_y", self.dynamic_subtitle_y.value())
+        if hasattr(self, 'animation_duration'):
+            self.settings.setValue("animation_duration", self.animation_duration.value())
+        if hasattr(self, 'dynamic_opacity'):
+            self.settings.setValue("dynamic_opacity", self.dynamic_opacity.value())
         
         # 保存质量设置参数
         if hasattr(self, 'crf_value'):

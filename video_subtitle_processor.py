@@ -171,7 +171,7 @@ class VideoSubtitleProcessor:
             # 8. 处理字幕素材
             subtitle_img, bg_img, subtitle_ass_path, use_ass_subtitle = self._process_subtitle_materials(  # 修改返回值
                 enable_subtitle, subtitle_df, subtitle_lang, video_index, style, font_size, subtitle_width,
-                bg_width, bg_height, temp_dir, dynamic_processor, progress_callback
+                bg_width, bg_height, temp_dir, dynamic_processor, progress_callback, enable_background
             )
             
             # 9. 处理音乐
@@ -422,20 +422,20 @@ class VideoSubtitleProcessor:
         """处理动态字幕"""
         dynamic_processor = None
         
-        # 检查是否启用动态字幕
-        if enable_dynamic_subtitle and enable_subtitle:
+        # 检查是否启用动态字幕（修复：动态字幕可以独立启用，不依赖enable_subtitle）
+        if enable_dynamic_subtitle:
             print(f"[动态字幕] 启用动态字幕功能")
             print(f"[动态字幕] 动画样式: {animation_style}")
-            print(f"[动态字幕] 动画ความเข้ม: {animation_intensity}")
-            print(f"[动态字幕] สีเน้น: {highlight_color}")
-            print(f"[动态字幕] โหมดการจับคู่: {match_mode}")
-            print(f"[动态字幕] พิกัดตำแหน่ง: ({position_x}, {position_y})")
-            print(f"[动态字幕] ขนาดตัวอักษร: {font_size}")
-            print(f"[动态字幕] สีตัวอักษร: {font_color}")
-            print(f"[动态字幕] ขนาดเส้นขอบ: {outline_size}")
-            print(f"[动态字ื่น] สีเส้นขอบ: {outline_color}")
-            print(f"[动态字ุม] ระยะเวลาแอนิเมชัน: {animation_duration}")
-            print(f"[动态字ุม] ความโปร่งใส: {opacity}")
+            print(f"[动态字幕] 动画强度: {animation_intensity}")
+            print(f"[动态字幕] 高亮颜色: {highlight_color}")
+            print(f"[动态字幕] 匹配模式: {match_mode}")
+            print(f"[动态字幕] 位置坐标: ({position_x}, {position_y})")
+            print(f"[动态字幕] 字体大小: {font_size}")
+            print(f"[动态字幕] 字体颜色: {font_color}")
+            print(f"[动态字幕] 描边大小: {outline_size}")
+            print(f"[动态字幕] 描边颜色: {outline_color}")
+            print(f"[动态字幕] 动画时长: {animation_duration}")
+            print(f"[动态字幕] 透明度: {opacity}")
             
             try:
                 dynamic_processor = DynamicSubtitleProcessor(
@@ -452,11 +452,11 @@ class VideoSubtitleProcessor:
                     animation_duration=animation_duration,
                     opacity=opacity
                 )
-                print(f"[动态字ุม] สร้างตัวประมวลผลสำเร็จ")
+                print(f"[动态字幕] 动态字幕处理器创建成功")
             except ImportError as e:
-                print(f"[动态字ุม] การนำเข้าโมดูลไม่สำเร็จ: {e}")
+                print(f"[动态字幕] 模块导入失败: {e}")
             except Exception as e:
-                print(f"[动态字ุม] การสร้างตัวประมวลผลไม่สำเร็จ: {e}")
+                print(f"[动态字幕] 处理器创建失败: {e}")
                 import traceback
                 traceback.print_exc()
         
@@ -789,7 +789,7 @@ class VideoSubtitleProcessor:
     
     def _process_subtitle_materials(self, enable_subtitle, subtitle_df, subtitle_lang, video_index, style,
                                    font_size, subtitle_width, bg_width, bg_height, temp_dir, dynamic_processor,
-                                   progress_callback):
+                                   progress_callback, enable_background=True):
         """处理字幕素材（字幕图片和背景）"""
         if progress_callback:
             progress_callback("处理字幕素材", 35.0)
@@ -799,10 +799,12 @@ class VideoSubtitleProcessor:
         subtitle_ass_path = None  # 添加ASS字幕文件路径变量
         use_ass_subtitle = False  # 添加ASS字幕使用标志
         
-        if enable_subtitle and subtitle_df is not None:
-            # 根据语言和视频索引选择对应的字幕
-            subtitle_text = None
-            
+        # 处理字幕内容（静态字幕和动态字幕独立处理）
+        subtitle_text = None
+        dynamic_subtitle_text = None
+        
+        # 首先检查是否有字幕数据
+        if subtitle_df is not None:
             print(f"可用的文档列: {list(subtitle_df.columns)}")
             print(f"视频索引: {video_index}")
             
@@ -812,11 +814,45 @@ class VideoSubtitleProcessor:
             if dynamic_processor:
                 # 如果启用了动态字幕，使用动态字幕处理器获取字幕文本
                 animated_processor = AnimatedSubtitleProcessor()
-                subtitle_text = animated_processor.get_animated_subtitle_text(subtitle_df, subtitle_lang, video_index)
-            else:
-                # 如果没有启用动态字幕，使用静态字幕处理器获取字幕文本
+                dynamic_subtitle_text = animated_processor.get_animated_subtitle_text(subtitle_df, subtitle_lang, video_index)
+                
+            if enable_subtitle:
+                # 如果启用了静态字幕，使用静态字幕处理器获取字幕文本
                 subtitle_text = static_processor.get_static_subtitle_text(subtitle_df, subtitle_lang, video_index)
+        
+        # 处理动态字幕（独立于静态字幕）
+        if dynamic_processor and dynamic_subtitle_text:
+            print(f"[动态字幕] 使用动态字幕处理器生成字幕")
+            # 使用新的动态字幕处理器生成ASS字幕
+            animated_processor = AnimatedSubtitleProcessor()
+            subtitle_ass_path = animated_processor.create_animated_subtitle(
+                text=dynamic_subtitle_text,
+                width=subtitle_width,
+                height=bg_height,
+                font_size=font_size,
+                animation_style=dynamic_processor.animation_style,
+                animation_intensity=dynamic_processor.animation_intensity,
+                highlight_color=dynamic_processor.highlight_color,
+                match_mode=dynamic_processor.match_mode,
+                position_x=dynamic_processor.position_x,
+                position_y=dynamic_processor.position_y,
+                font_color=getattr(dynamic_processor, "font_color", "#FFFFFF"),
+                outline_size=getattr(dynamic_processor, "outline_size", 2),
+                outline_color=getattr(dynamic_processor, "outline_color", "#000000"),
+                animation_duration=getattr(dynamic_processor, "animation_duration", 0.3),
+                opacity=getattr(dynamic_processor, "opacity", 100)
+            )
             
+            # 动态字幕文件生成成功
+            if subtitle_ass_path and Path(subtitle_ass_path).exists():
+                # 设置动态字幕处理标志
+                use_ass_subtitle = True
+                print(f"[动态字幕] 动态字幕文件生成成功: {subtitle_ass_path}")
+            else:
+                print(f"[动态字幕] 动态字幕文件生成失败")
+        
+        # 处理静态字幕（独立于动态字幕）
+        if enable_subtitle and subtitle_text:
             # 创建字幕图片
             subtitle_height = 500  # 字幕高度
             subtitle_img_path = temp_dir / "subtitle.png"
@@ -824,64 +860,35 @@ class VideoSubtitleProcessor:
             # 调试信息：打印字体大小
             print(f"字体大小传递给字幕创建函数: {font_size}")
             
-            # 检查是否使用动态字幕
-            if dynamic_processor:
-                print(f"[动态字幕] 使用动态字幕处理器生成字幕")
-                # 使用新的动态字幕处理器生成ASS字幕
-                animated_processor = AnimatedSubtitleProcessor()
-                subtitle_ass_path = animated_processor.create_animated_subtitle(
-                    text=subtitle_text,
-                    width=subtitle_width,
-                    height=subtitle_height,
-                    font_size=font_size,
-                    animation_style=dynamic_processor.animation_style,
-                    animation_intensity=dynamic_processor.animation_intensity,
-                    highlight_color=dynamic_processor.highlight_color,
-                    match_mode=dynamic_processor.match_mode,
-                    position_x=dynamic_processor.position_x,
-                    position_y=dynamic_processor.position_y,
-                    font_color=getattr(dynamic_processor, "font_color", "#FFFFFF"),
-                    outline_size=getattr(dynamic_processor, "outline_size", 2),
-                    outline_color=getattr(dynamic_processor, "outline_color", "#000000"),
-                    animation_duration=getattr(dynamic_processor, "animation_duration", 0.3),
-                    opacity=getattr(dynamic_processor, "opacity", 100)
-                )
-                
-                # 动态字幕文件生成成功
-                if subtitle_ass_path and Path(subtitle_ass_path).exists():
-                    # 设置动态字幕处理标志
-                    use_ass_subtitle = True
-                    print(f"[动态字幕] 动态字幕文件生成成功: {subtitle_ass_path}")
-                else:
-                    print(f"[动态字幕] 动态字幕文件生成失败，回退到PNG字幕")
-                    # 回退到PNG字幕生成
-                    static_processor = StaticSubtitleProcessor()
-                    subtitle_img = static_processor.create_static_subtitle(
-                        text=subtitle_text,
-                        style=style,
-                        width=subtitle_width,
-                        height=subtitle_height,
-                        font_size=font_size,
-                        output_path=str(subtitle_img_path)
-                    )
-            else:
-                # 静态字幕生成
-                print(f"[字幕] 静态字幕生成")
-                print(f"[字幕] 字幕文本: {subtitle_text}")
-                print(f"[字幕] 字体大小: {font_size}")
-                print(f"[字幕] 样式: {style}")
-                
-                # 使用新的静态字幕处理器生成PNG字幕
-                static_processor = StaticSubtitleProcessor()
-                subtitle_img = static_processor.create_static_subtitle(
-                    text=subtitle_text,
-                    style=style,
-                    width=subtitle_width,
-                    height=subtitle_height,
-                    font_size=font_size,
-                    output_path=str(subtitle_img_path)
-                )
+            # 静态字幕生成
+            print(f"[静态字幕] 静态字幕生成")
+            print(f"[静态字幕] 字幕文本: {subtitle_text}")
+            print(f"[静态字幕] 字体大小: {font_size}")
+            print(f"[静态字幕] 样式: {style}")
             
+            # 使用新的静态字幕处理器生成PNG字幕
+            static_processor = StaticSubtitleProcessor()
+            subtitle_img = static_processor.create_static_subtitle(
+                text=subtitle_text,
+                style=style,
+                width=subtitle_width,
+                height=subtitle_height,
+                font_size=font_size,
+                output_path=str(subtitle_img_path)
+            )
+        
+        # 处理无字幕数据的情况
+        if subtitle_df is None:
+            if enable_subtitle:
+                print("字幕機能が有効になっていますが、有効な字幕データが存在しないので、字幕生成をスキップします")
+            if dynamic_processor:
+                print("[动态字幕] 启用了动态字幕，但没有字幕数据，跳过动态字幕生成")
+        elif not enable_subtitle and not dynamic_processor:
+            print("字幕機能が無効になっています、字幕生成をスキップします")
+        
+        # 修复：透明背景生成完全独立于字幕功能
+        # 检查是否需要生成透明背景（通过enable_background参数控制）
+        if enable_background:
             # 透明な背景を角丸四角形として作成し、カスタムサイズを使用する
             bg_img_path = temp_dir / "background.png"
             bg_radius = 20   # 角丸半径
@@ -898,10 +905,8 @@ class VideoSubtitleProcessor:
             
             if not bg_img:
                 print("角丸四角形背景の作成に失敗しました")
-        elif enable_subtitle:
-            print("字幕機能が有効になっていますが、有効な字幕データが存在しないので、字幕生成をスキップします")
         else:
-            print("字幕機能が無効になっています、字幕生成をスキップします")
+            print("【背景色】透明背景功能未启用，跳过背景生成")
         
         return subtitle_img, bg_img, subtitle_ass_path, use_ass_subtitle  # ユーザーにASS字幕に関する情報を返す
     
@@ -1181,79 +1186,77 @@ class VideoSubtitleProcessor:
             if enable_gif:
                 logging.warning(f"  ⚠️ GIF启用但gif_index为None或has_gif为False")
             
-        # 叠加字幕（如果启用）
-        if enable_subtitle:
-            # 使用传入的ASS字幕相关变量
-            # use_ass_subtitle 和 subtitle_ass_path 已作为参数传入
-            
-            if use_ass_subtitle and subtitle_ass_path:
-                # 使用ASS字幕文件
-                # ASS字幕不需要作为输入流，直接在过滤器中使用
-                # 确保跨平台路径格式正确
-                ass_path_str = str(subtitle_ass_path)
-                if os.name == 'nt':  # Windows系统
-                    # 将反斜杠替换为正斜杠，保持驱动器字母格式 (C:/path/to/file)
-                    ass_path_str = ass_path_str.replace('\\', '/')
-                else:
-                    # Unix/Linux/macOS系统，确保使用正斜杠
-                    ass_path_str = ass_path_str.replace('\\', '/')
-                ass_filter = f"[{current_stream}]ass=filename={ass_path_str}[v]"
-                filter_complex_parts.append(ass_filter)
-                logging.info(f"  📝 添加ASS字幕: {current_stream} -> v")
-                logging.info(f"    ASS文件: {subtitle_ass_path}")
-                current_stream = "v"
-                # stream_index += 1  # 不需要增加，因为直接输出到[v]
-            elif subtitle_index is not None:
-                # 使用PNG图片字幕（回退模式）
-                # 修正坐标系统：将1080x1920坐标系统映射到实际视频尺寸
-                video_info = get_video_info(video_path)
-                if video_info:
-                    actual_width, actual_height, _ = video_info
-                    # 计算坐标缩放比例
-                    x_scale = actual_width / 1080.0
-                    y_scale = actual_height / 1920.0
-                    
-                    # 转换坐标到实际视频尺寸
-                    scaled_subtitle_x = int(subtitle_absolute_x * x_scale)
-                    scaled_subtitle_y = int(final_y_position * y_scale)
-                    scaled_start_y = int(start_y_position * y_scale)
-                    scaled_final_y = int(final_y_position * y_scale)
-                    
-                    print(f"🔧 坐标系统转换: 原始({subtitle_absolute_x}, {final_y_position}) -> 实际({scaled_subtitle_x}, {scaled_subtitle_y})")
-                    print(f"🔧 缩放比例: X={x_scale:.3f}, Y={y_scale:.3f}")
-                    logging.info(f"🔧 坐标系统转换: 原始({subtitle_absolute_x}, {final_y_position}) -> 实际({scaled_subtitle_x}, {scaled_subtitle_y})")
-                else:
-                    # 如果无法获取视频信息，使用原始坐标
-                    scaled_subtitle_x = subtitle_absolute_x
-                    scaled_subtitle_y = final_y_position
-                    scaled_start_y = start_y_position
-                    scaled_final_y = final_y_position
-                    print("⚠️ 无法获取视频信息，使用原始坐标")
-                    logging.warning("⚠️ 无法获取视频信息，使用原始坐标")
-                
-                cmd = f"[{current_stream}][s1]overlay=x={scaled_subtitle_x}:y='if(lt(t,{entrance_duration}),{scaled_start_y}-({scaled_start_y}-{scaled_final_y})*t/{entrance_duration},{scaled_final_y})':shortest=0:format=auto[v{stream_index}]"
-                filter_complex_parts.append(cmd)
-                logging.info(f"  📝 添加PNG字幕叠加: {current_stream} + s1 -> v{stream_index}")
-                logging.info(f"    位置: x={scaled_subtitle_x}, y={scaled_final_y}")
-                logging.info(f"    随机位置: {False}")
-                current_stream = f"v{stream_index}"
-                stream_index += 1
+        # 处理动态字幕（ASS字幕）- 独立于静态字幕
+        if use_ass_subtitle and subtitle_ass_path:
+            # 使用ASS字幕文件
+            # ASS字幕不需要作为输入流，直接在过滤器中使用
+            # 确保跨平台路径格式正确并进行转义
+            ass_path_str = str(subtitle_ass_path)
+            if os.name == 'nt':  # Windows系统
+                # 将反斜杠替换为正斜杠，保持驱动器字母格式 (C:/path/to/file)
+                ass_path_str = ass_path_str.replace('\\', '/')
             else:
-                logging.warning(f"  ⚠️ 字幕启用但没有可用的字幕文件")
+                # Unix/Linux/macOS系统，确保使用正斜杠
+                ass_path_str = ass_path_str.replace('\\', '/')
+            
+            # 对路径进行转义，处理特殊字符和空格
+            # 使用单引号包围路径以避免特殊字符问题
+            ass_filter = f"[{current_stream}]ass='{ass_path_str}'[v{stream_index}]"
+            filter_complex_parts.append(ass_filter)
+            logging.info(f"  📝 添加动态字幕(ASS): {current_stream} -> v{stream_index}")
+            logging.info(f"    ASS文件: {subtitle_ass_path}")
+            current_stream = f"v{stream_index}"
+            stream_index += 1
+        
+        # 处理静态字幕（PNG字幕）- 独立于动态字幕
+        if enable_subtitle and subtitle_index is not None:
+            # 使用PNG图片字幕
+            # 修正坐标系统：将1080x1920坐标系统映射到实际视频尺寸
+            video_info = get_video_info(video_path)
+            if video_info:
+                actual_width, actual_height, _ = video_info
+                # 计算坐标缩放比例
+                x_scale = actual_width / 1080.0
+                y_scale = actual_height / 1920.0
+                
+                # 转换坐标到实际视频尺寸
+                scaled_subtitle_x = int(subtitle_absolute_x * x_scale)
+                scaled_subtitle_y = int(final_y_position * y_scale)
+                scaled_start_y = int(start_y_position * y_scale)
+                scaled_final_y = int(final_y_position * y_scale)
+                
+                print(f"🔧 坐标系统转换: 原始({subtitle_absolute_x}, {final_y_position}) -> 实际({scaled_subtitle_x}, {scaled_subtitle_y})")
+                print(f"🔧 缩放比例: X={x_scale:.3f}, Y={y_scale:.3f}")
+                logging.info(f"🔧 坐标系统转换: 原始({subtitle_absolute_x}, {final_y_position}) -> 实际({scaled_subtitle_x}, {scaled_subtitle_y})")
+            else:
+                # 如果无法获取视频信息，使用原始坐标
+                scaled_subtitle_x = subtitle_absolute_x
+                scaled_subtitle_y = final_y_position
+                scaled_start_y = start_y_position
+                scaled_final_y = final_y_position
+                print("⚠️ 无法获取视频信息，使用原始坐标")
+                logging.warning("⚠️ 无法获取视频信息，使用原始坐标")
+            
+            cmd = f"[{current_stream}][s1]overlay=x={scaled_subtitle_x}:y='if(lt(t,{entrance_duration}),{scaled_start_y}-({scaled_start_y}-{scaled_final_y})*t/{entrance_duration},{scaled_final_y})':shortest=0:format=auto[v{stream_index}]"
+            filter_complex_parts.append(cmd)
+            logging.info(f"  📝 添加PNG字幕叠加: {current_stream} + s1 -> v{stream_index}")
+            logging.info(f"    位置: x={scaled_subtitle_x}, y={scaled_final_y}")
+            logging.info(f"    随机位置: {False}")
+            current_stream = f"v{stream_index}"
+            stream_index += 1
+        else:
+            logging.warning(f"  ⚠️ 字幕启用但没有可用的字幕文件")
         
         # 检查是否有任何素材需要处理
-        has_any_overlay = (enable_subtitle and subtitle_img) or (enable_background and bg_img) or (enable_image and has_image) or (enable_gif and has_gif)
+        # 静态字幕和动态字幕可以同时存在，分别处理
+        has_any_overlay = (enable_subtitle and subtitle_img) or (enable_background and bg_img) or (enable_image and has_image) or (enable_gif and has_gif) or use_ass_subtitle
         
         # 组合过滤器链，并确保最终输出端点正确设置
         if has_any_overlay:
              # 确保最终输出有一个明确的标签[v]
-             if current_stream != "v1" and current_stream != "v":
-                 # 如果有叠加操作且不是最终输出，将最终流标记为[v]
+             if current_stream != "v":
+                 # 将最终流标记为[v]
                  filter_complex_parts.append(f"[{current_stream}]null[v]")
-             elif current_stream == "v1":
-                 # 如果没有叠加操作，直接将基础视频流标记为[v]
-                 filter_complex_parts.append("[v1]null[v]")
-             # 如果current_stream已经是"v"，则不需要添加null过滤器
         else:
             # 如果没有任何叠加操作，确保有一个[v]标签
             if current_stream != "v":
@@ -1340,6 +1343,7 @@ class VideoSubtitleProcessor:
         input_index = 1  # 视频输入为0，从1开始计算其他输入
         
         # 添加字幕、背景、图片、GIF等素材输入
+        # 只有在启用静态字幕且有字幕图片时才添加字幕输入（允许与动态字幕同时存在）
         if enable_subtitle and subtitle_img:
             ffmpeg_command.extend(['-i', str(subtitle_img)])
             input_index += 1
