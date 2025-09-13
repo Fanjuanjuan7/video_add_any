@@ -108,10 +108,22 @@ def process_video(video_path, output_path=None, style=None, subtitle_lang=None,
         width, height, duration = video_info
         print(f"视频信息: {width}x{height}, {duration}秒")
         
-        # 如果启用了动态字幕，使用动态字幕的位置参数
+        # 如果启用了动态字幕，将像素坐标转换为百分比坐标
         if enable_dynamic_subtitle:
-            position_x = dynamic_subtitle_x
-            position_y = dynamic_subtitle_y
+            # 将像素坐标转换为百分比坐标（基于1080x1920标准分辨率）
+            # UI中的坐标是基于1080宽度和1920高度的像素坐标
+            # DynamicSubtitleProcessor期望0-100的百分比坐标
+            position_x_percent = dynamic_subtitle_x / 1080 * 100  # 转换X坐标为百分比
+            position_y_percent = dynamic_subtitle_y / 1920 * 100  # 转换Y坐标为百分比
+            
+            # 确保坐标在有效范围内
+            position_x_percent = max(0, min(100, position_x_percent))
+            position_y_percent = max(0, min(100, position_y_percent))
+            
+            print(f"[坐标转换] 像素坐标({dynamic_subtitle_x}, {dynamic_subtitle_y}) -> 百分比坐标({position_x_percent:.1f}%, {position_y_percent:.1f}%)")
+            
+            position_x = position_x_percent
+            position_y = position_y_percent
         
         # 对视频进行预处理（水印处理、正放倒放等）
         print(f"对视频进行预处理...")

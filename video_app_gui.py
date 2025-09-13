@@ -68,7 +68,7 @@ class ProcessingThread(QThread):
                  gif_scale=1.0, gif_rotation=0, gif_x=800, gif_y=100, scale_factor=1.1, image_path=None, quality_settings=None,
                  enable_tts=False, tts_voice="zh-CN-XiaoxiaoNeural", tts_volume=100, tts_text="", auto_match_duration=True,
                  voice_speed=1.0,  # 添加手动变速参数
-                 enable_dynamic_subtitle=False, animation_style="highlight", animation_intensity=1.5, 
+                 enable_dynamic_subtitle=True, animation_style="highlight", animation_intensity=1.5, 
                  highlight_color="#FFD700", match_mode="fixed",
                  # 添加新的动态字幕参数
                  dynamic_font_size=70, dynamic_font_color="#FFFFFF", dynamic_outline_size=2, 
@@ -126,7 +126,7 @@ class ProcessingThread(QThread):
         self.enable_dynamic_subtitle = enable_dynamic_subtitle
         self.animation_style = animation_style
         self.animation_intensity = animation_intensity
-        self.highlight_color = highlight_color
+        self.highlight_color_value = highlight_color  # 使用不同的属性名避免冲突
         self.match_mode = match_mode
         # 新增的动态字幕参数
         self.dynamic_font_size = dynamic_font_size
@@ -478,7 +478,7 @@ class ProcessingThread(QThread):
                             enable_dynamic_subtitle=self.enable_dynamic_subtitle,
                             animation_style=self.animation_style,
                             animation_intensity=self.animation_intensity,
-                            highlight_color=self.highlight_color,
+                            highlight_color=self.highlight_color_value,
                             match_mode=self.match_mode,
                             position_x=self.dynamic_subtitle_x,
                             position_y=self.dynamic_subtitle_y,
@@ -1418,7 +1418,7 @@ class VideoProcessorApp(QMainWindow):
         
         # 启用动态字幕勾选框
         self.enable_dynamic_subtitle = QCheckBox("启用动态字幕")
-        self.enable_dynamic_subtitle.setChecked(False)
+        self.enable_dynamic_subtitle.setChecked(True)  # 默认启用动态字幕
         self.enable_dynamic_subtitle.setToolTip("勾选后视频中会添加动态字幕效果")
         
         # 动画样式选择
@@ -1436,13 +1436,11 @@ class VideoProcessorApp(QMainWindow):
         self.animation_intensity.setSingleStep(0.1)
         self.animation_intensity.setDecimals(1)
         
-        # 高亮颜色选择
-        self.highlight_color_combo = QComboBox()
-        self.highlight_color_combo.addItem("金色", "#FFD700")
-        self.highlight_color_combo.addItem("红色", "#FF6B6B")
-        self.highlight_color_combo.addItem("青色", "#4ECDC4")
-        self.highlight_color_combo.addItem("紫色", "#9B59B6")
-        self.highlight_color_combo.addItem("橙色", "#FF8C00")
+        # 高亮颜色选择器
+        self.highlight_color = QPushButton()
+        self.highlight_color.setStyleSheet("background-color: #FFD700; border: 1px solid #555555; border-radius: 4px; min-height: 24px;")
+        self.highlight_color.clicked.connect(self.select_highlight_color)
+        self.highlight_color_value = "#FFD700"  # 存储实际的颜色值
         
         # 匹配模式选择
         self.match_mode_combo = QComboBox()
@@ -1508,7 +1506,7 @@ class VideoProcessorApp(QMainWindow):
         dynamic_subtitle_layout.addWidget(QLabel("动画强度:"), 2, 0)
         dynamic_subtitle_layout.addWidget(self.animation_intensity, 2, 1)
         dynamic_subtitle_layout.addWidget(QLabel("高亮颜色:"), 3, 0)
-        dynamic_subtitle_layout.addWidget(self.highlight_color_combo, 3, 1)
+        dynamic_subtitle_layout.addWidget(self.highlight_color, 3, 1)
         dynamic_subtitle_layout.addWidget(QLabel("匹配模式:"), 4, 0)
         dynamic_subtitle_layout.addWidget(self.match_mode_combo, 4, 1)
         
@@ -2342,7 +2340,7 @@ class VideoProcessorApp(QMainWindow):
         enable_dynamic_subtitle = self.enable_dynamic_subtitle.isChecked()
         animation_style = self.animation_style_combo.currentData()
         animation_intensity = self.animation_intensity.value()
-        highlight_color = self.highlight_color_combo.currentData()
+        highlight_color = self.highlight_color_value
         match_mode = self.match_mode_combo.currentData()
         
         # 获取新的动态字幕参数
@@ -2748,9 +2746,11 @@ class VideoProcessorApp(QMainWindow):
             
         self.animation_intensity.setValue(self.settings.value("animation_intensity", 1.5, type=float))
         
-        highlight_color_idx = self.settings.value("highlight_color_idx", 0, type=int)
-        if 0 <= highlight_color_idx < self.highlight_color_combo.count():
-            self.highlight_color_combo.setCurrentIndex(highlight_color_idx)
+        # 加载高亮颜色设置
+        highlight_color = self.settings.value("highlight_color", "#FFD700", type=str)
+        if highlight_color:
+            self.highlight_color_value = highlight_color
+            self.highlight_color.setStyleSheet(f"background-color: {self.highlight_color_value}; border: 1px solid #555555; border-radius: 4px; min-height: 24px;")
             
         match_mode_idx = self.settings.value("match_mode_idx", 0, type=int)
         if 0 <= match_mode_idx < self.match_mode_combo.count():
@@ -2926,7 +2926,7 @@ class VideoProcessorApp(QMainWindow):
         self.settings.setValue("enable_dynamic_subtitle", self.enable_dynamic_subtitle.isChecked())
         self.settings.setValue("animation_style_idx", self.animation_style_combo.currentIndex())
         self.settings.setValue("animation_intensity", self.animation_intensity.value())
-        self.settings.setValue("highlight_color_idx", self.highlight_color_combo.currentIndex())
+        self.settings.setValue("highlight_color", self.highlight_color_value)
         self.settings.setValue("match_mode_idx", self.match_mode_combo.currentIndex())
         # 保存动态字幕颜色设置
         self.settings.setValue("dynamic_font_color", self.dynamic_font_color_value)
@@ -3065,6 +3065,13 @@ class VideoProcessorApp(QMainWindow):
         if color.isValid():
             self.dynamic_outline_color_value = color.name().upper()
             self.dynamic_outline_color.setStyleSheet(f"background-color: {self.dynamic_outline_color_value}; border: 1px solid #555555; border-radius: 4px; min-height: 24px;")
+    
+    def select_highlight_color(self):
+        """选择高亮颜色"""
+        color = QColorDialog.getColor(QColor(self.highlight_color_value), self, "选择高亮颜色")
+        if color.isValid():
+            self.highlight_color_value = color.name().upper()
+            self.highlight_color.setStyleSheet(f"background-color: {self.highlight_color_value}; border: 1px solid #555555; border-radius: 4px; min-height: 24px;")
     
     def select_gif_file(self):
         """选择GIF文件"""

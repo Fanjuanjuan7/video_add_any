@@ -171,7 +171,7 @@ class VideoSubtitleProcessor:
             # 8. 处理字幕素材
             subtitle_img, bg_img, subtitle_ass_path, use_ass_subtitle = self._process_subtitle_materials(  # 修改返回值
                 enable_subtitle, subtitle_df, subtitle_lang, video_index, style, font_size, subtitle_width,
-                bg_width, bg_height, temp_dir, dynamic_processor, progress_callback, enable_background
+                bg_width, bg_height, temp_dir, dynamic_processor, progress_callback, enable_background, width, height
             )
             
             # 9. 处理音乐
@@ -789,7 +789,7 @@ class VideoSubtitleProcessor:
     
     def _process_subtitle_materials(self, enable_subtitle, subtitle_df, subtitle_lang, video_index, style,
                                    font_size, subtitle_width, bg_width, bg_height, temp_dir, dynamic_processor,
-                                   progress_callback, enable_background=True):
+                                   progress_callback, enable_background=True, width=1080, height=1920):
         """处理字幕素材（字幕图片和背景）"""
         if progress_callback:
             progress_callback("处理字幕素材", 35.0)
@@ -827,8 +827,8 @@ class VideoSubtitleProcessor:
             animated_processor = AnimatedSubtitleProcessor()
             subtitle_ass_path = animated_processor.create_animated_subtitle(
                 text=dynamic_subtitle_text,
-                width=subtitle_width,
-                height=bg_height,
+                width=width,
+                height=height,
                 font_size=font_size,
                 animation_style=dynamic_processor.animation_style,
                 animation_intensity=dynamic_processor.animation_intensity,
@@ -1631,6 +1631,45 @@ class VideoSubtitleProcessor:
         else:
             print("最终转换失败")
             return None
+
+
+    def process_video_with_dynamic_subtitle(self, video_path, output_path, subtitle_text, 
+                                           animation_style="高亮放大", animation_intensity=1.5, 
+                                           highlight_color="#FFD700", progress_callback=None):
+        """
+        使用动态字幕处理视频的简化接口
+        """
+        return self.add_subtitle_to_video(
+            video_path=video_path,
+            output_path=output_path,
+            enable_dynamic_subtitle=True,
+            animation_style=animation_style,
+            animation_intensity=animation_intensity,
+            highlight_color=highlight_color,
+            progress_callback=progress_callback
+        )
+    
+    def add_dynamic_subtitle_to_video(self, video_path, output_path, subtitle_data, 
+                                     animation_config=None, progress_callback=None):
+        """
+        为视频添加动态字幕的专用方法
+        """
+        if animation_config is None:
+            animation_config = {
+                "animation_style": "高亮放大",
+                "animation_intensity": 1.5,
+                "highlight_color": "#FFD700"
+            }
+        
+        return self.add_subtitle_to_video(
+            video_path=video_path,
+            output_path=output_path,
+            enable_dynamic_subtitle=True,
+            animation_style=animation_config.get("animation_style", "高亮放大"),
+            animation_intensity=animation_config.get("animation_intensity", 1.5),
+            highlight_color=animation_config.get("highlight_color", "#FFD700"),
+            progress_callback=progress_callback
+        )
 
 
 # 创建全局处理器实例

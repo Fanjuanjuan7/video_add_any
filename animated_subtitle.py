@@ -448,7 +448,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             # 根据动画样式选择样式和效果
             if animation_style == "高亮放大":
                 style = "Highlight"
-                effect = f"{{\\t(0,{int(animation_duration*500)},\\fscx120\\fscy120\\c{hex_to_ass_color(getattr(self, 'highlight_color', '#FFD700'))}&)\\t({int(animation_duration*500)},{int(animation_duration*1000)},\\fscx100\\fscy100\\c{primary_color_with_alpha}&)}}"
+                effect = f"{{\\pos({position_x},{position_y})\\t(0,{int(animation_duration*500)},\\fscx120\\fscy120\\c{hex_to_ass_color(getattr(self, 'highlight_color', '#FFD700'))}&)\\t({int(animation_duration*500)},{int(animation_duration*1000)},\\fscx100\\fscy100\\c{primary_color_with_alpha}&)}}"
             elif animation_style == "弹跳效果":
                 style = "Bounce"
                 bounce_height = int(10 * getattr(self, 'animation_intensity', 1.5))
@@ -456,11 +456,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             elif animation_style == "发光效果":
                 style = "Glow"
                 highlight_color = hex_to_ass_color(getattr(self, 'highlight_color', '#FFD700'))
-                effect = f"{{\\t(0,{int(animation_duration*500)},\\3c{highlight_color}&\\3a&H00&)\\t({int(animation_duration*500)},{int(animation_duration*1000)},\\3c{outline_color_with_alpha}&\\3a&H80&)}}"
+                effect = f"{{\\pos({position_x},{position_y})\\t(0,{int(animation_duration*500)},\\3c{highlight_color}&\\3a&H00&)\\t({int(animation_duration*500)},{int(animation_duration*1000)},\\3c{outline_color_with_alpha}&\\3a&H80&)}}"
             elif animation_style == "打字机效果":
                 style = "Typewriter"
                 # 打字机效果通过逐字显示实现
-                effect = f"{{\\alpha&HFF&\\t(0,{int(animation_duration*1000)},\\alpha&H00&)}}"
+                effect = f"{{\\pos({position_x},{position_y})\\alpha&HFF&\\t(0,{int(animation_duration*1000)},\\alpha&H00&)}}"
             elif animation_style == "滑入效果":
                 style = "Slide"
                 # 从左侧滑入效果
@@ -855,38 +855,227 @@ class DynamicSubtitleProcessor:
         """
         创建动态字幕
         """
+        import logging
+        
+        # 详细日志记录 - 字幕处理开始
+        logging.info(f"🎬 开始创建动态字幕")
+        logging.info(f"  📝 文本内容: {text[:50]}{'...' if len(text) > 50 else ''}")
+        logging.info(f"  📐 画布尺寸: {width}x{height}")
+        logging.info(f"  🎨 动画样式: {self.animation_style}")
+        logging.info(f"  💫 动画强度: {self.animation_intensity}")
+        logging.info(f"  🌟 高亮颜色: {self.highlight_color}")
+        logging.info(f"  📍 位置坐标: ({self.position_x}, {self.position_y})")
+        
         # 使用传入的font_size参数，如果没有传入则使用实例变量
         if font_size is None:
             font_size = self.font_size
             
+        logging.info(f"  🔤 字体大小: {font_size}")
+        logging.info(f"  🎨 字体颜色: {self.font_color}")
+        logging.info(f"  📏 描边大小: {self.outline_size}")
+        logging.info(f"  🖤 描边颜色: {self.outline_color}")
+        
         # 设置动画参数
         self.system.animation_style = self.animation_style
         self.system.animation_intensity = self.animation_intensity
         self.system.highlight_color = self.highlight_color
         
-        return self.system.create_dynamic_subtitle(
-            text=text,
-            width=width,
-            height=height,
-            font_size=font_size,
-            output_path=output_path,
-            tts_audio_path=tts_audio_path,
-            font_color=self.font_color,
-            outline_size=self.outline_size,
-            outline_color=self.outline_color,
-            animation_duration=self.animation_duration,
-            opacity=self.opacity,
-            position_x=self.position_x,
-            position_y=self.position_y
-        )
+        try:
+            result = self.system.create_dynamic_subtitle(
+                text=text,
+                width=width,
+                height=height,
+                font_size=font_size,
+                output_path=output_path,
+                tts_audio_path=tts_audio_path,
+                font_color=self.font_color,
+                outline_size=self.outline_size,
+                outline_color=self.outline_color,
+                animation_duration=self.animation_duration,
+                opacity=self.opacity,
+                position_x=self.position_x,
+                position_y=self.position_y
+            )
+            
+            if result:
+                logging.info(f"✅ 动态字幕创建成功: {output_path}")
+            else:
+                logging.error(f"❌ 动态字幕创建失败")
+                
+            return result
+            
+        except Exception as e:
+            logging.error(f"❌ 动态字幕创建异常: {str(e)}")
+            return None
+    
+    def create_ass_subtitle(self, subtitle_data, output_path, video_width=1920, video_height=1080):
+        """
+        创建ASS字幕文件
+        
+        Args:
+            subtitle_data: 字幕数据列表，每个元素包含 start_time, end_time, text
+            output_path: 输出ASS文件路径
+            video_width: 视频宽度
+            video_height: 视频高度
+            
+        Returns:
+            bool: 是否成功创建ASS文件
+        """
+        import logging
+        
+        logging.info(f"🎬 开始创建ASS字幕文件")
+        logging.info(f"  📄 输出路径: {output_path}")
+        logging.info(f"  📊 字幕条目数: {len(subtitle_data)}")
+        logging.info(f"  📐 视频尺寸: {video_width}x{video_height}")
+        logging.info(f"  🎨 动画样式: {self.animation_style}")
+        logging.info(f"  🌟 高亮颜色: {self.highlight_color}")
+        
+        try:
+            # 计算总时长
+            if subtitle_data:
+                total_duration = max(item['end_time'] for item in subtitle_data)
+                logging.info(f"  ⏱️ 总时长: {total_duration:.2f}秒")
+            else:
+                logging.warning(f"  ⚠️ 字幕数据为空")
+                return False
+            
+            # 合并所有文本
+            full_text = ' '.join(item['text'] for item in subtitle_data)
+            logging.info(f"  📝 完整文本: {full_text[:100]}{'...' if len(full_text) > 100 else ''}")
+            
+            # 设置位置参数到系统对象
+            self.system.position_x = self.position_x
+            self.system.position_y = self.position_y
+            
+            # 调用系统的ASS生成方法
+            result = self.system._generate_ass_subtitle(
+                text=full_text,
+                duration=total_duration,
+                width=video_width,
+                height=video_height,
+                font_size=self.font_size,
+                font_color=self.font_color,
+                outline_size=self.outline_size,
+                outline_color=self.outline_color,
+                animation_duration=self.animation_duration,
+                opacity=self.opacity
+            )
+            
+            if result:
+                # 将生成的ASS内容写入文件
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(result)
+                
+                # 验证文件是否成功创建
+                from pathlib import Path
+                if Path(output_path).exists():
+                    file_size = Path(output_path).stat().st_size
+                    logging.info(f"✅ ASS文件创建成功: {output_path}")
+                    logging.info(f"  📊 文件大小: {file_size} 字节")
+                    
+                    # 验证ASS文件内容
+                    with open(output_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        
+                    # 检查关键ASS段落
+                    key_sections = ['[Script Info]', '[V4+ Styles]', '[Events]']
+                    for section in key_sections:
+                        if section in content:
+                            logging.info(f"  ✅ ASS段落检查通过: {section}")
+                        else:
+                            logging.warning(f"  ⚠️ ASS段落缺失: {section}")
+                    
+                    # 检查高亮颜色是否正确应用
+                    if self.highlight_color.upper() in content.upper():
+                        logging.info(f"  ✅ 高亮颜色应用成功: {self.highlight_color}")
+                    else:
+                        logging.warning(f"  ⚠️ 高亮颜色未找到: {self.highlight_color}")
+                    
+                    return True
+                else:
+                    logging.error(f"❌ ASS文件创建失败: 文件不存在")
+                    return False
+            else:
+                logging.error(f"❌ ASS内容生成失败")
+                return False
+                
+        except Exception as e:
+            logging.error(f"❌ ASS文件创建异常: {str(e)}")
+            import traceback
+            logging.error(f"  📋 异常详情: {traceback.format_exc()}")
+            return False
+    
+    def process_subtitle_data(self, subtitle_data, video_duration=None):
+        """
+        处理字幕数据，生成时间轴同步的字幕事件
+        
+        Args:
+            subtitle_data: 原始字幕数据
+            video_duration: 视频总时长
+            
+        Returns:
+            list: 处理后的字幕事件列表
+        """
+        import logging
+        
+        logging.info(f"🔄 开始处理字幕数据")
+        logging.info(f"  📊 输入数据条目: {len(subtitle_data)}")
+        logging.info(f"  ⏱️ 视频时长: {video_duration}秒" if video_duration else "  ⏱️ 视频时长: 未指定")
+        
+        try:
+            processed_events = []
+            
+            for i, item in enumerate(subtitle_data):
+                # 时间轴同步检查
+                start_time = item.get('start_time', 0)
+                end_time = item.get('end_time', start_time + 2)
+                text = item.get('text', '')
+                
+                # 验证时间轴合理性
+                if start_time >= end_time:
+                    logging.warning(f"  ⚠️ 时间轴异常 [{i}]: start={start_time}, end={end_time}")
+                    end_time = start_time + 2  # 默认2秒时长
+                
+                if video_duration and end_time > video_duration:
+                    logging.warning(f"  ⚠️ 字幕超出视频时长 [{i}]: end={end_time} > duration={video_duration}")
+                    end_time = video_duration
+                
+                # 创建处理后的事件
+                event = {
+                    'start_time': start_time,
+                    'end_time': end_time,
+                    'text': text,
+                    'index': i,
+                    'animation_style': self._get_animation_style_for_word(i),
+                    'duration': end_time - start_time
+                }
+                
+                processed_events.append(event)
+                
+                logging.info(f"  📝 处理事件 [{i}]: {start_time:.2f}s-{end_time:.2f}s '{text[:20]}{'...' if len(text) > 20 else ''}'")
+            
+            logging.info(f"✅ 字幕数据处理完成: {len(processed_events)} 个事件")
+            return processed_events
+            
+        except Exception as e:
+            logging.error(f"❌ 字幕数据处理异常: {str(e)}")
+            return []
 
 
 class AnimatedSubtitleProcessor:
     """动态字幕处理器"""
     
-    def __init__(self):
+    def __init__(self, animation_style="高亮放大", animation_intensity=1.5, highlight_color="#FFD700"):
         """初始化动态字幕处理器"""
         self.system = DynamicSubtitleSystem()
+        self.animation_style = animation_style
+        self.animation_intensity = animation_intensity
+        self.highlight_color = highlight_color
+        
+        # 设置系统的动画参数
+        self.system.animation_style = animation_style
+        self.system.animation_intensity = animation_intensity
+        self.system.highlight_color = highlight_color
     
     def get_animated_subtitle_text(self, subtitle_df, language, video_index=0):
         """
